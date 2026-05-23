@@ -1,0 +1,63 @@
+# Build output --------------------------------------------------------------
+build/
+out/
+cmake-build-*/
+.cxx/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+
+# ndk-build intermediate / output
+libs/
+obj/
+
+# Gradle / Android Studio ---------------------------------------------------
+.gradle/
+local.properties
+captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+release/
+debug/
+
+# IDE -----------------------------------------------------------------------
+.idea/
+*.iml
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# OS ------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor backups ------------------------------------------------------------
+*.swp
+*.swo
+*~
+*.bak
+
+# Logs and crash artifacts --------------------------------------------------
+*.log
+hs_err_pid*
+tombstone_*
+
+# Signing material ----------------------------------------------------------
+*.jks
+*.keystore
+keystore.properties
+
+# Python tooling caches -----------------------------------------------------
+__pycache__/
+*.pyc
+.venv/
+
+# Coverage / profiling ------------------------------------------------------
+*.gcno
+*.gcda
+*.profraw
+*.profdata

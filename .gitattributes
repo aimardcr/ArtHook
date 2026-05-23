@@ -1,0 +1,39 @@
+* text=auto eol=lf
+
+# C/C++
+*.c       text eol=lf
+*.h       text eol=lf
+*.cpp     text eol=lf
+*.hpp     text eol=lf
+*.S       text eol=lf
+*.s       text eol=lf
+
+# Build / config
+CMakeLists.txt  text eol=lf
+*.cmake         text eol=lf
+*.mk            text eol=lf
+*.kts           text eol=lf
+*.gradle        text eol=lf
+*.toml          text eol=lf
+*.properties    text eol=lf
+
+# Docs / data
+*.md            text eol=lf
+*.txt           text eol=lf
+*.xml           text eol=lf
+*.json          text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+
+# Scripts
+gradlew         text eol=lf
+*.sh            text eol=lf
+
+# Binary — leave alone
+*.a       binary
+*.so      binary
+*.jar     binary
+*.png     binary
+*.jpg     binary
+*.webp    binary
+*.dex     binary

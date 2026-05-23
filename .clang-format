@@ -1,0 +1,33 @@
+# arthook style — based on Google with small tweaks for the dense C++17
+# / JNI / inline-asm flavor of this codebase.
+BasedOnStyle: Google
+Language: Cpp
+Standard: c++17
+
+ColumnLimit: 100
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLambdasOnASingleLine: All
+AllowShortBlocksOnASingleLine: Empty
+
+PointerAlignment: Left
+DerivePointerAlignment: false
+
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive
+
+NamespaceIndentation: None
+FixNamespaceComments: true
+
+BinPackArguments: false
+BinPackParameters: false
+AlignAfterOpenBracket: Align
+
+BreakConstructorInitializers: BeforeColon
+ConstructorInitializerIndentWidth: 4
+ContinuationIndentWidth: 4
