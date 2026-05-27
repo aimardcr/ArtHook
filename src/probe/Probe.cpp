@@ -59,7 +59,12 @@ const ProbeNames& probe_names() {
         ProbeNames v{};
         uint8_t r[17];
         FillRandom(r, sizeof(r));
-        for (int i = 0; i < 7; ++i) v.pkg[i]    = 'a' + (r[i] % 26);
+        // pkg[0] is constrained to 'a'..'i' so that the random class
+        // descriptor "L<pkg>/<cls>;" sorts *before* "Ljava/lang/Object;"
+        // in the dex string_ids table. Android's InMemoryDexClassLoader
+        // verifier requires string_ids to be lexicographically ordered.
+        v.pkg[0] = 'a' + (r[0] % 9);
+        for (int i = 1; i < 7; ++i) v.pkg[i]    = 'a' + (r[i] % 26);
         for (int i = 0; i < 5; ++i) v.cls[i]    = 'a' + (r[7 + i] % 26);
         for (int i = 0; i < 5; ++i) v.method[i] = 'a' + (r[12 + i] % 26);
         std::snprintf(v.descriptor, sizeof(v.descriptor), "L%s/%s;", v.pkg, v.cls);
@@ -443,8 +448,11 @@ jclass LoadProbeClass(JNIEnv* env) {
     jmethodID loadClass =
         env->GetMethodID(cl_cls, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
     jstring name = env->NewStringUTF(probe_names().dotted);
+    LOGI("Probe: loadClass(\"%s\")", probe_names().dotted);
     jobject clazz_obj = env->CallObjectMethod(loader, loadClass, name);
     if (env->ExceptionCheck()) {
+        LOGE("Probe: loadClass threw — describing:");
+        env->ExceptionDescribe();
         env->ExceptionClear();
         clazz_obj = nullptr;
     }
