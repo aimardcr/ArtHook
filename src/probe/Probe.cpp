@@ -3,7 +3,7 @@
 // Builds a minimal DEX at runtime with one `public static native` method,
 // injects it via InMemoryDexClassLoader, and returns the method's
 // ArtMethod* for Layout.cpp to read its quick entry. Class/method names
-// are randomized per process (DEX layout requires fixed lengths — content
+// are randomized per process (DEX layout requires fixed lengths, content
 // is random). The class is dropped immediately after we read the pointer.
 
 #include "probe/Probe.h"
@@ -33,8 +33,8 @@ struct ProbeNames {
     char pkg[8];          // 7 chars + nul
     char cls[6];          // 5 chars + nul
     char method[6];       // 5 chars + nul
-    char descriptor[16];  // "L<pkg>/<cls>;"  — 15 chars + nul
-    char dotted[14];      // "<pkg>.<cls>"    — 13 chars + nul
+    char descriptor[16];  // "L<pkg>/<cls>;" , 15 chars + nul
+    char dotted[14];      // "<pkg>.<cls>"   , 13 chars + nul
 };
 
 void FillRandom(uint8_t* dst, size_t n) {
@@ -44,10 +44,10 @@ void FillRandom(uint8_t* dst, size_t n) {
         ::close(fd);
         if (got == static_cast<ssize_t>(n)) return;
     }
-    // Fallback: time + pid hashed across the buffer. Plenty for our
-    // weak-anti-detection use; we're not generating crypto keys.
-    uint64_t seed = static_cast<uint64_t>(::time(nullptr)) ^
-                    static_cast<uint64_t>(::getpid()) * 0x9E3779B97F4A7C15ULL;
+    // Fallback: hash time/clock/pid/stack-addr across the buffer (not crypto).
+    uint64_t seed = (static_cast<uint64_t>(::time(nullptr)) ^ static_cast<uint64_t>(::clock())) +
+                    static_cast<uint64_t>(::getpid()) * 0x9E3779B97F4A7C15ULL +
+                    reinterpret_cast<uintptr_t>(&seed) * 0xD1B54A32D192ED03ULL;
     for (size_t i = 0; i < n; ++i) {
         seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
         dst[i] = static_cast<uint8_t>(seed >> 56);
@@ -340,14 +340,14 @@ jobject GetSystemClassLoader(JNIEnv* env) {
 // Load the probe class from a freshly-built dex. Returns the probe class
 // as a local ref on success (caller must DeleteLocalRef), nullptr on
 // failure. The dex bytes must stay alive for the lifetime of the
-// classloader — we keep `dex_storage` as a static so the ByteBuffer it
+// classloader, we keep `dex_storage` as a static so the ByteBuffer it
 // backs doesn't get freed (only relevant on the direct-buffer path).
 jclass LoadProbeClass(JNIEnv* env) {
     static std::vector<uint8_t> dex_storage = BuildProbeDex();
 
     auto dumpException = [&](const char* where) {
         if (env->ExceptionCheck()) {
-            LOGE("Probe: %s threw — describing:", where);
+            LOGE("Probe: %s threw, describing:", where);
             env->ExceptionDescribe();  // prints stack trace to logcat
             env->ExceptionClear();
         } else {
@@ -355,16 +355,15 @@ jclass LoadProbeClass(JNIEnv* env) {
         }
     };
 
-    // Strip any MTE / pointer-auth tag from the address — some Android 14+
-    // builds reject tagged native pointers in NewDirectByteBuffer.
+    // Strip MTE/pointer-auth tag (some Android 14+ reject tagged ptrs here).
     uintptr_t addr = reinterpret_cast<uintptr_t>(dex_storage.data());
     addr &= 0x00ffffffffffffffULL;
 
-    // Preferred: direct ByteBuffer wrapping native memory — zero-copy.
+    // Preferred: direct ByteBuffer wrapping native memory, zero-copy.
     jobject buf = env->NewDirectByteBuffer(reinterpret_cast<void*>(addr),
                                            static_cast<jlong>(dex_storage.size()));
     if (env->ExceptionCheck()) {
-        LOGE("Probe: NewDirectByteBuffer threw —");
+        LOGE("Probe: NewDirectByteBuffer threw,");
         env->ExceptionDescribe();
         env->ExceptionClear();
         buf = nullptr;
@@ -444,14 +443,24 @@ jclass LoadProbeClass(JNIEnv* env) {
         return nullptr;
     }
 
-    jclass    cl_cls = FindClassChecked(env, "java/lang/ClassLoader");
+    jclass cl_cls = FindClassChecked(env, "java/lang/ClassLoader");
+    if (!cl_cls) {
+        env->DeleteLocalRef(loader);
+        return nullptr;
+    }
     jmethodID loadClass =
         env->GetMethodID(cl_cls, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
-    jstring name = env->NewStringUTF(probe_names().dotted);
+    jstring name = loadClass ? env->NewStringUTF(probe_names().dotted) : nullptr;
+    if (!loadClass || !name) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        env->DeleteLocalRef(cl_cls);
+        env->DeleteLocalRef(loader);
+        return nullptr;
+    }
     LOGI("Probe: loadClass(\"%s\")", probe_names().dotted);
     jobject clazz_obj = env->CallObjectMethod(loader, loadClass, name);
     if (env->ExceptionCheck()) {
-        LOGE("Probe: loadClass threw — describing:");
+        LOGE("Probe: loadClass threw,");
         env->ExceptionDescribe();
         env->ExceptionClear();
         clazz_obj = nullptr;
@@ -468,11 +477,11 @@ jclass LoadProbeClass(JNIEnv* env) {
 
 }  // namespace
 
-// Never actually invoked — only RegisterNatives is called. The quick
+// Never actually invoked, only RegisterNatives is called. The quick
 // entry of an unresolved native stays at art_quick_resolution_trampoline
 // (in libart), which Layout.cpp adjusts by +0x140 to reach the generic
 // JNI bridge. Invoking would resolve the entry, and on Android 15 ART
-// updates the stored quick entry to point straight at this C function —
+// updates the stored quick entry to point straight at this C function,
 // outside libart, breaking the bridge derivation.
 extern "C" void Probe_dummy(JNIEnv*, jclass) {}
 
@@ -494,11 +503,8 @@ void* Probe::SampleProbeArtMethod(JNIEnv* env) {
 
     ArtMethodPtr am = ArtMethodFromJniBinding(env, probe, probe_names().method, "()V");
 
-    // Drop our last reference to the probe class. Combined with the
-    // already-released local refs to the classloader and ByteBuffer, the
-    // class becomes eligible for ART to unload at its leisure — the
-    // ArtMethodPtr we return is only read once by Layout.cpp before the
-    // caller discards it.
+    // Drop our last ref to the probe class; the ArtMethodPtr we return is
+    // read once by Layout.cpp before the caller discards it.
     env->DeleteLocalRef(probe);
     if (!am) {
         LOGE("Probe: failed to resolve probe ArtMethod");
