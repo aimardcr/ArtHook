@@ -25,12 +25,21 @@ public:
     Hooked& operator=(Hooked&& other) noexcept;
     ~Hooked();
 
-    // Install a hook. `clazz` may be a local ref — we promote our own
+    // Install a hook. `clazz` may be a local ref, we promote our own
     // GlobalRef internally. `replacement` must follow the JNI calling
     // convention. Idempotent failure: returns the status without altering
     // *this if install fails.
     Status install(
         JNIEnv* env, jclass clazz, const char* name, const char* signature, void* replacement);
+
+    // Convenience overload: resolve `class_name` via the app classloader
+    // (with FindClass fallback) and forward. Accepts JNI form
+    // ("com/foo/Bar") or dotted form ("com.foo.Bar").
+    Status install(JNIEnv* env,
+                   const char* class_name,
+                   const char* name,
+                   const char* signature,
+                   void* replacement);
 
     // Unhook and release the GlobalRef. Required before destruction (we
     // have no JNIEnv in the destructor). Calling on an uninstalled
@@ -41,14 +50,19 @@ public:
     bool target_is_native() const { return backup_jm_ == nullptr && installed(); }
     bool target_is_static() const { return is_static_; }
 
-    // Invoke the original method. `thiz` is ignored for static targets —
-    // pass nullptr (or anything — it won't be touched).
+    // Invoke the original. `thiz` is ignored for static targets.
+    //
+    // Does not check or clear exceptions: if the original throws, it stays
+    // pending and the return value is unspecified. Returning it straight to
+    // the VM is fine (ART rethrows), but call ExceptionCheck() before any
+    // further JNI calls or before substituting your own result.
     template <class Ret, class... Args>
     Ret invoke(JNIEnv* env, jobject thiz, Args... args) const;
 
 private:
     void* backup_fn_ = nullptr;      // valid when target was native
     jmethodID backup_jm_ = nullptr;  // valid when target was non-native
+    void* target_ = nullptr;         // live target ArtMethod (for backup refresh)
     jclass decl_ = nullptr;          // GlobalRef of declaring class
     bool is_static_ = false;
     std::string name_;
@@ -58,12 +72,19 @@ private:
 template <class Ret, class... Args>
 Ret Hooked::invoke(JNIEnv* env, jobject thiz, Args... args) const {
     if (backup_fn_) {
-        // Native target: jclass and jobject are pointer-compatible, so
-        // a single fn-ptr type works for both static and instance.
-        using Fn = Ret (*)(JNIEnv*, jobject, Args...);
-        jobject second = is_static_ ? reinterpret_cast<jobject>(decl_) : thiz;
-        return reinterpret_cast<Fn>(backup_fn_)(env, second, args...);
+        // Native target: call the original JNI impl directly. Second arg is
+        // the declaring jclass (static) or the receiver (instance); pick the
+        // matching fn-ptr type so the call is well-formed.
+        if (is_static_) {
+            using FnStatic = Ret (*)(JNIEnv*, jclass, Args...);
+            return reinterpret_cast<FnStatic>(backup_fn_)(env, decl_, args...);
+        }
+        using FnInstance = Ret (*)(JNIEnv*, jobject, Args...);
+        return reinterpret_cast<FnInstance>(backup_fn_)(env, thiz, args...);
     }
+
+    // Non-native: keep the off-heap backup's class ref fresh against moving GC.
+    detail::RefreshBackupClass(reinterpret_cast<void*>(backup_jm_), target_);
 
 #define ARTHOOK_DISPATCH(Suffix)                                              \
     (is_static_ ? env->CallStatic##Suffix##Method(decl_, backup_jm_, args...) \
