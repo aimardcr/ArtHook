@@ -110,15 +110,10 @@ size_t DiscoverArtMethodSize(JNIEnv* env, jclass object_class) {
     return candidate;
 }
 
-// access_flags_ offset discovery.
-//
-// Naive value-match fails on modern Android: Object.wait()V is no longer
-// native (it's a Java wrapper), and ART can strip kAccNative from
-// intrinsified methods (getClass, hashCode on 13+). What's stable is that
-// the low 16 bits hold standard JVM dex flags, and for these four `public`
-// instance methods only {kAccPublic, kAccFinal, kAccNative} can ever appear
-// there. So the correct offset is the unique word where every probe's low
-// halfword is a subset of 0x0111 and includes kAccPublic.
+// access_flags_ offset. Value-matching is unreliable (modern ART strips
+// kAccNative from intrinsics, wait() is no longer native), so we find the
+// unique word whose low halfword, for all four public probes, is a subset
+// of {public,final,native} and includes kAccPublic.
 size_t DiscoverAccessFlagsOffset(JNIEnv* env, jclass object_class, size_t am_size) {
     static constexpr struct {
         const char* name;
@@ -172,25 +167,16 @@ size_t DiscoverAccessFlagsOffset(JNIEnv* env, jclass object_class, size_t am_siz
     return static_cast<size_t>(-1);
 }
 
-// Entry-point offsets are structural: the trailing PtrSizedFields struct is
-// (data_, entry_point_from_quick_compiled_code_) on every Android with ART
-// since 6.0, so the offsets fall out of am_size directly.
+// Entry-point offsets are structural: the trailing PtrSizedFields is
+// (data_, entry_point_from_quick_compiled_code_) since ART 6.0, so both
+// offsets fall out of am_size.
 //
-// jni_bridge_quick_entry (= art_quick_generic_jni_trampoline) is required
-// for hooking non-native methods. We try, in order:
-//   1. Resolve the symbol from libart's .dynsym (rarely exported).
-//   2. Sample the quick entry of one of several Object natives — works
-//      when at least one isn't AOT'd into boot.oat.
-//   3. Inject a freshly-built probe dex (so the class can't be in
-//      boot.oat). Its native lands at art_quick_resolution_trampoline on
-//      Android 11+ user builds; the actual generic trampoline lives
-//      adjacent in libart's .text — known offset +0x140 on arm64 builds.
-//      We confirm by matching against `art_quick_resolution_trampoline`
-//      via .dynsym when available, else apply the offset blindly (the
-//      sanity check `PointsIntoLibart` catches catastrophic misses).
-//
-// If all three fail, jni_bridge stays null and non-native hooks fail
-// cleanly with kInternalError.
+// jni_bridge_quick_entry (= art_quick_generic_jni_trampoline) is needed for
+// non-native hooks. Tried in order: (1) .dynsym symbol; (2) an Object
+// native's quick entry, if not AOT'd into boot.oat; (3) a fresh probe dex
+// whose native lands on the resolution trampoline (arm64 only, bridge at
+// +0x140). If all fail the bridge stays null and non-native hooks return
+// kNoJniBridge.
 struct EntryPointOffsets {
     size_t jni;
     size_t quick;
@@ -246,33 +232,33 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
         }
     }
 
-    // Probe-dex fallback. On Android 11+ user builds the freshly-loaded
-    // native's quick entry is art_quick_resolution_trampoline; the
-    // generic bridge sits at +0x140 in arm64 builds.
+    // Probe-dex fallback: the fresh native's quick entry is the resolution
+    // trampoline; on arm64 the generic bridge is +0x140 past it. arm64-only
+    // (offset is arch-specific); never store the raw trampoline.
+#if defined(__aarch64__)
     if (void* probe_am = Probe::SampleProbeArtMethod(env)) {
         uintptr_t probe_quick = ReadUintPtr(probe_am, out.quick);
         if (PointsIntoLibart(probe_quick)) {
-            uintptr_t bridge = probe_quick;
             void* res_sym = ResolveLibartSymbol("art_quick_resolution_trampoline");
             bool is_resol = res_sym && reinterpret_cast<uintptr_t>(res_sym) == probe_quick;
+            // Apply if it's the resolution trampoline (or the symbol is stripped).
             if (is_resol || !res_sym) {
                 uintptr_t adj = probe_quick + 0x140;
-                if (PointsIntoLibart(adj)) bridge = adj;
-            }
-            if (PointsIntoLibart(bridge)) {
-                out.jni_bridge = reinterpret_cast<void*>(bridge);
-                LOGI("entry offsets: jni=%zu quick=%zu bridge=%p (probe dex%s)",
-                     out.jni,
-                     out.quick,
-                     out.jni_bridge,
-                     bridge != probe_quick ? ", +0x140" : "");
-                out.valid = true;
-                return out;
+                if (PointsIntoLibart(adj)) {
+                    out.jni_bridge = reinterpret_cast<void*>(adj);
+                    LOGI("entry offsets: jni=%zu quick=%zu bridge=%p (probe dex +0x140)",
+                         out.jni,
+                         out.quick,
+                         out.jni_bridge);
+                    out.valid = true;
+                    return out;
+                }
             }
         }
     }
+#endif
 
-    LOGW("no JNI bridge captured — non-native hooks need SetBridgeProbe()");
+    LOGW("no JNI bridge captured, non-native hooks need SetBridgeProbe()");
     out.valid = true;
     return out;
 }
@@ -293,14 +279,12 @@ bool SetJniBridgeFromMethod(void* m) {
         LOGE("SetJniBridgeFromMethod: quick entry %p not in libart", reinterpret_cast<void*>(q));
         return false;
     }
-    // Reject art_quick_resolution_trampoline — installing it as our quick
-    // entry causes ART to re-resolve every invocation and abort with
-    // CheckIncompatibleClassChange when the runtime stub state doesn't
-    // match a non-runtime method.
+    // Reject the resolution trampoline: as our quick entry ART would
+    // re-resolve every call and abort (CheckIncompatibleClassChange).
     void* resolution = ResolveLibartSymbol("art_quick_resolution_trampoline");
     if (resolution && reinterpret_cast<uintptr_t>(resolution) == q) {
         LOGE(
-            "SetJniBridgeFromMethod: candidate is art_quick_resolution_trampoline — "
+            "SetJniBridgeFromMethod: candidate is art_quick_resolution_trampoline, "
             "the probe method has never been invoked through the generic bridge");
         return false;
     }

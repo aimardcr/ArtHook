@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// jmethodID encoding on modern ART
-// --------------------------------
-// On Android 11+ the default JNI-IDs mode is kSwapablePointer, so
-// jmethodIDs returned by GetMethodID can be indices encoded as
-// `(index << 1) | 1` instead of direct ArtMethod* pointers. We can't reach
-// art::jni::JniIdManager::DecodeMethodId from outside libart (release
-// builds are stripped and the symbol isn't exported), so we use a
-// reflection roundtrip instead: env->ToReflectedMethod() lets ART decode
-// the index internally, and Executable.artMethod is a private long field
-// holding the raw ArtMethod* pointer.
+// jmethodID encoding: on Android 11+ a jmethodID may be an index
+// `(index << 1) | 1` rather than an ArtMethod*. ART's DecodeMethodId isn't
+// reachable (stripped), so we round-trip via ToReflectedMethod and read the
+// raw pointer from the private Executable.artMethod long field.
 
 #include "art/ArtMethod.h"
 
+#include <atomic>
 #include <cstring>
 #include <mutex>
 
@@ -24,40 +19,47 @@ namespace arthook {
 
 namespace {
 
-std::once_flag g_exec_once;
-jfieldID g_exec_art_method_fid = nullptr;
+// Cached after first success. Not call_once: a transient first-call failure
+// must not poison resolution forever, so we retry under the lock.
+std::mutex g_exec_mu;
+std::atomic<jfieldID> g_exec_art_method_fid{nullptr};
 
 void EnsureExecutableField(JNIEnv* env) {
-    std::call_once(g_exec_once, [env] {
-        jclass exec = env->FindClass("java/lang/reflect/Executable");
+    if (g_exec_art_method_fid.load()) return;
+    std::lock_guard<std::mutex> lk(g_exec_mu);
+    if (g_exec_art_method_fid.load()) return;
+
+    jfieldID fid = nullptr;
+    jclass exec = env->FindClass("java/lang/reflect/Executable");
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (exec) {
+        fid = env->GetFieldID(exec, "artMethod", "J");
         if (env->ExceptionCheck()) env->ExceptionClear();
-        if (exec) {
-            g_exec_art_method_fid = env->GetFieldID(exec, "artMethod", "J");
+        env->DeleteLocalRef(exec);
+    }
+    // Pre-Android-6 fallback: the field lived directly on Method.
+    if (!fid) {
+        jclass m = env->FindClass("java/lang/reflect/Method");
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        if (m) {
+            fid = env->GetFieldID(m, "artMethod", "J");
             if (env->ExceptionCheck()) env->ExceptionClear();
-            env->DeleteLocalRef(exec);
+            env->DeleteLocalRef(m);
         }
-        // Pre-Android-6 fallback: the field lived directly on Method.
-        if (!g_exec_art_method_fid) {
-            jclass m = env->FindClass("java/lang/reflect/Method");
-            if (env->ExceptionCheck()) env->ExceptionClear();
-            if (m) {
-                g_exec_art_method_fid = env->GetFieldID(m, "artMethod", "J");
-                if (env->ExceptionCheck()) env->ExceptionClear();
-                env->DeleteLocalRef(m);
-            }
-        }
-        if (!g_exec_art_method_fid) {
-            LOGE("Executable.artMethod not found — cannot resolve ArtMethod*");
-        } else {
-            LOGI("Executable.artMethod field bound: fid=%p", g_exec_art_method_fid);
-        }
-    });
+    }
+    if (!fid) {
+        LOGE("Executable.artMethod not found, will retry on next call");
+    } else {
+        g_exec_art_method_fid.store(fid);
+        LOGI("Executable.artMethod field bound: fid=%p", fid);
+    }
 }
 
 ArtMethodPtr ReadArtMethodField(JNIEnv* env, jobject reflected) {
     EnsureExecutableField(env);
-    if (!g_exec_art_method_fid) return nullptr;
-    jlong v = env->GetLongField(reflected, g_exec_art_method_fid);
+    jfieldID fid = g_exec_art_method_fid.load();
+    if (!fid) return nullptr;
+    jlong v = env->GetLongField(reflected, fid);
     if (env->ExceptionCheck()) {
         env->ExceptionClear();
         return nullptr;
@@ -88,8 +90,7 @@ ArtMethodPtr ArtMethodFromJniBinding(JNIEnv* env, jclass clazz, const char* name
     }
     if (!id) return nullptr;
 
-    // Fast path: real heap pointer. Indexed IDs always have bit 0 set; heap
-    // pointers on 64-bit Android are well above 0x10000.
+    // Fast path: real pointer (indexed IDs have bit 0 set; pointers > 0x10000).
     uintptr_t v = reinterpret_cast<uintptr_t>(id);
     if ((v & 1u) == 0 && v > 0x10000) return reinterpret_cast<ArtMethodPtr>(id);
 
@@ -137,5 +138,14 @@ void SetEntryPointFromQuickCompiledCode(ArtMethodPtr m, void* p) {
 void CopyArtMethod(ArtMethodPtr dst, ArtMethodPtr src) {
     std::memcpy(dst, src, Layout().art_method_size);
 }
+
+namespace detail {
+void RefreshBackupClass(void* backup, void* target) {
+    if (!backup || !target) return;
+    // declaring_class_ is a 4-byte GcRoot at offset 0; copy it from the live
+    // (GC-tracked) target so a moving GC can't leave the backup's copy stale.
+    std::memcpy(backup, target, sizeof(uint32_t));
+}
+}  // namespace detail
 
 }  // namespace arthook
