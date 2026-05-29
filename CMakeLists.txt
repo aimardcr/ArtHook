@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# arthook — ART method-hooking static library. Consume via
+# arthook, ART method-hooking static library. Consume via
 #   add_subdirectory(third_party/arthook)
 #   target_link_libraries(my_so PRIVATE arthook::arthook)
 
@@ -18,6 +18,7 @@ set(ARTHOOK_COMMON_SOURCES
     src/elf/ElfResolver.cpp
     src/hook/HookEngine.cpp
     src/hook/Hooked.cpp
+    src/jvm/ClassLookup.cpp
     src/jvm/JavaVM.cpp
     src/probe/Probe.cpp
     src/trampoline/Trampoline.cpp
