@@ -201,8 +201,6 @@ public final class MethodKindTests {
         r.add(CAT, "static_initializer_interaction", () -> {
             if (Targets.clinitableLoaded)
                 Assert.skip("Clinitable already initialized; rerun in fresh process");
-            if (!NativeBridge.hasJniBridge())
-                Assert.skip("JNI bridge unavailable; clinitTarget is non-native");
 
             ClassLoader cl = MethodKindTests.class.getClassLoader();
             Class<?> cls = Class.forName(
@@ -211,6 +209,8 @@ public final class MethodKindTests {
             m.setAccessible(true);
 
             int rc = NativeBridge.installHookOnReflected("clinit_target", m);
+            if (rc == NativeBridge.STATUS_NO_JNI_BRIDGE)
+                Assert.skip("JNI bridge unavailable; clinitTarget is non-native");
             Assert.expectEq(0, rc, "install on reflected");
             try {
                 Assert.expectFalse(Targets.clinitableLoaded,
@@ -228,14 +228,11 @@ public final class MethodKindTests {
     }
 
     private static void assertInstalled(String key) {
-        // Skip non-native hooks gracefully when the JNI bridge isn't
-        // captured on this device (notify in boot.oat + no symbol/.dynsym
-        // entry for art_quick_generic_jni_trampoline).
-        if (!NativeBridge.targetIsNative(key) && !NativeBridge.hasJniBridge()) {
-            Assert.skip("JNI bridge not available on this device; "
-                        + "non-native hooks disabled");
-        }
+        // Skip non-native hooks gracefully when the JNI bridge isn't captured
+        // on this device (the install returns kNoJniBridge).
         int rc = NativeBridge.installHook(key);
+        if (rc == NativeBridge.STATUS_NO_JNI_BRIDGE)
+            Assert.skip("JNI bridge not available on this device; non-native hooks disabled");
         Assert.expectEq(0, rc, "installHook(" + key + ") rc");
     }
 }

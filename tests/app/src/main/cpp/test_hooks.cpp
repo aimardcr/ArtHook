@@ -892,11 +892,6 @@ Java_com_ak4ne_arthooktest_testkit_NativeBridge_trampolinePagesInUse(JNIEnv*, jc
     return g_trampoline_pages_in_use.load();
 }
 
-JNIEXPORT jboolean JNICALL Java_com_ak4ne_arthooktest_testkit_NativeBridge_hasJniBridge(JNIEnv*,
-                                                                                        jclass) {
-    return arthook::HasJniBridge() ? JNI_TRUE : JNI_FALSE;
-}
-
 JNIEXPORT jboolean JNICALL
 Java_com_ak4ne_arthooktest_testkit_NativeBridge_targetIsNative(JNIEnv* env, jclass, jstring jkey) {
     const char* c_key = env->GetStringUTFChars(jkey, nullptr);

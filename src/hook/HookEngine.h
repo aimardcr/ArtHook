@@ -14,7 +14,7 @@ namespace arthook {
 
 class HookEngine {
 public:
-    static Status Initialize(JNIEnv* env);
+    static Status Initialize(JNIEnv* env, bool verify);
 
     static Status Hook(JNIEnv* env,
                        jclass clazz,
@@ -32,6 +32,9 @@ public:
 
     static bool IsInitialized();
 };
+
+// Internal: true if `target` (an ArtMethodPtr) currently has a hook record.
+bool IsTargetHooked(void* target);
 
 }  // namespace arthook
 

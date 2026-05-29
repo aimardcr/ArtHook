@@ -5,10 +5,11 @@
 // Catches a wrong layout discovery on this device before the consumer hooks
 // anything real, turning a would-be crash into a clean kOk/failure result.
 
-#include "arthook/ArtHook.h"
+#include "hook/SelfTest.h"
 
 #include <atomic>
 
+#include "arthook/ArtHook.h"
 #include "probe/Probe.h"
 #include "util/Log.h"
 
@@ -33,18 +34,17 @@ void SelfTestHook(JNIEnv* env, jclass cls) {
 
 }  // namespace
 
-Status SelfTest(JNIEnv* env) {
-    if (!IsInitialized()) return Status::kNotInitialized;
-    if (!env) return Status::kInvalidArgument;
+bool RunSelfTest(JNIEnv* env) {
+    if (!env) return false;
 
     jclass cls = Probe::LoadClass(env);
     const char* name = Probe::MethodName();
     if (!cls || !name) {
         LOGE("SelfTest: could not load probe class");
-        return Status::kInternalError;
+        return false;
     }
 
-    Status result = Status::kInternalError;
+    bool result = false;
     JNINativeMethod nm{const_cast<char*>(name), const_cast<char*>("()V"),
                        reinterpret_cast<void*>(&SelfTestOrig)};
     jmethodID mid = nullptr;
@@ -76,7 +76,7 @@ Status SelfTest(JNIEnv* env) {
             bool restored = g_orig_ran.load() == kOrigMagic && g_hook_ran.load() != kHookMagic;
 
             if (hook_fired && backup_ok && restored) {
-                result = Status::kOk;
+                result = true;
                 LOGI("SelfTest: hooking verified on this device");
             } else {
                 LOGE("SelfTest failed: replacement=%d backup=%d restore=%d", hook_fired, backup_ok,

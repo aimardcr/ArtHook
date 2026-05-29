@@ -78,12 +78,16 @@ public final class ConcurrencyTests {
         });
 
         r.add(CAT, "concurrent_install_8_threads", 30_000, () -> {
-            if (!NativeBridge.hasJniBridge())
-                Assert.skip("JNI bridge unavailable; thread_keys_* target non-native methods");
             final String[] keys = {
                 "thread_keys_a", "thread_keys_b", "thread_keys_c", "thread_keys_d",
                 "thread_keys_e", "thread_keys_f", "thread_keys_g", "thread_keys_h",
             };
+            // Probe once: if these non-native targets need a bridge this device
+            // lacks, skip rather than failing inside the threads.
+            int probe = NativeBridge.installHook(keys[0]);
+            if (probe == NativeBridge.STATUS_NO_JNI_BRIDGE)
+                Assert.skip("JNI bridge unavailable; thread_keys_* target non-native methods");
+            if (probe == 0) NativeBridge.uninstallHook(keys[0]);
             final int rounds = 50;
             CountDownLatch start = new CountDownLatch(1);
             CountDownLatch done  = new CountDownLatch(keys.length);

@@ -31,10 +31,6 @@ const ArtMethodLayout& Layout();
 // Idempotent on success.
 bool DiscoverLayout(JNIEnv* env);
 
-// Records `m`'s quick entry as the JNI bridge, after verifying it lives
-// inside libart.so. Used by arthook::SetBridgeProbe().
-bool SetJniBridgeFromMethod(void* m);
-
 }  // namespace arthook
 
 #endif  // ARTHOOK_ART_LAYOUT_H_

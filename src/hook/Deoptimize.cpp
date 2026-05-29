@@ -13,6 +13,7 @@
 #include "art/AccessFlags.h"
 #include "art/ArtMethod.h"
 #include "elf/ElfResolver.h"
+#include "hook/HookEngine.h"
 #include "util/Log.h"
 
 namespace arthook {
@@ -61,21 +62,13 @@ Status DeoptimizeTarget(ArtMethodPtr target) {
 Status Deoptimize(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
     if (!IsInitialized()) return Status::kNotInitialized;
     if (!env || !clazz || !name || !signature) return Status::kInvalidArgument;
-    if (IsHooked(env, clazz, name, signature)) {
+    ArtMethodPtr target = ArtMethodFromJniBinding(env, clazz, name, signature);
+    if (!target) return Status::kMethodNotFound;
+    if (IsTargetHooked(target)) {
         LOGW("Deoptimize: target is hooked; deoptimize callers, not the hooked method");
         return Status::kAlreadyHooked;
     }
-    return DeoptimizeTarget(ArtMethodFromJniBinding(env, clazz, name, signature));
-}
-
-Status DeoptimizeReflected(JNIEnv* env, jobject reflected_method) {
-    if (!IsInitialized()) return Status::kNotInitialized;
-    if (!env || !reflected_method) return Status::kInvalidArgument;
-    if (IsHookedReflected(env, reflected_method)) {
-        LOGW("Deoptimize: target is hooked; deoptimize callers, not the hooked method");
-        return Status::kAlreadyHooked;
-    }
-    return DeoptimizeTarget(ArtMethodFromReflected(env, reflected_method));
+    return DeoptimizeTarget(target);
 }
 
 }  // namespace arthook

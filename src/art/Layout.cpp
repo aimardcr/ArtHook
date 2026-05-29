@@ -258,7 +258,7 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
     }
 #endif
 
-    LOGW("no JNI bridge captured, non-native hooks need SetBridgeProbe()");
+    LOGW("no JNI bridge captured; non-native hooks unavailable on this device");
     out.valid = true;
     return out;
 }
@@ -267,30 +267,6 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
 
 const ArtMethodLayout& Layout() {
     return g_layout;
-}
-
-bool SetJniBridgeFromMethod(void* m) {
-    if (!g_layout.valid) {
-        LOGE("SetJniBridgeFromMethod: layout not discovered");
-        return false;
-    }
-    uintptr_t q = ReadUintPtr(m, g_layout.offset_entry_point_quick_code);
-    if (!PointsIntoLibart(q)) {
-        LOGE("SetJniBridgeFromMethod: quick entry %p not in libart", reinterpret_cast<void*>(q));
-        return false;
-    }
-    // Reject the resolution trampoline: as our quick entry ART would
-    // re-resolve every call and abort (CheckIncompatibleClassChange).
-    void* resolution = ResolveLibartSymbol("art_quick_resolution_trampoline");
-    if (resolution && reinterpret_cast<uintptr_t>(resolution) == q) {
-        LOGE(
-            "SetJniBridgeFromMethod: candidate is art_quick_resolution_trampoline, "
-            "the probe method has never been invoked through the generic bridge");
-        return false;
-    }
-    g_layout.jni_bridge_quick_entry = reinterpret_cast<void*>(q);
-    LOGI("JNI bridge set to %p", g_layout.jni_bridge_quick_entry);
-    return true;
 }
 
 bool DiscoverLayout(JNIEnv* env) {

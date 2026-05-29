@@ -16,6 +16,13 @@
 
 namespace arthook {
 
+// Internal: re-sync the backup ArtMethod's declaring-class ref from the live
+// target before invoking it (a moving GC can otherwise leave the off-heap
+// backup's copy stale). No-op on null. Used by Hooked::invoke(). Not public.
+namespace detail {
+void RefreshBackupClass(void* backup, void* target);
+}
+
 class Hooked {
 public:
     Hooked() = default;
