@@ -40,6 +40,8 @@ Status Initialize(JNIEnv* env);
 // is reported separately by HasJniBridge().
 Status SelfTest(JNIEnv* env);
 
+// Internal: required by the inline templates in this header and Hooked.h.
+// Not part of the stable public API; do not call directly.
 namespace detail {
 Status AcquireJniEnv(JNIEnv** env, JavaVM** vm, bool* attached);
 
@@ -138,7 +140,7 @@ Status Deoptimize(JNIEnv* env, jclass clazz, const char* name, const char* signa
 Status DeoptimizeReflected(JNIEnv* env, jobject reflected_method);
 
 // Hook every declared method named `name` on the class (all overloads) with
-// the same `replacement` — handy when a target's signature varies across
+// the same `replacement`, handy when a target's signature varies across
 // Android versions (e.g. SSL-pinning checks). `replacement` must be
 // ABI-compatible with every matched overload. Returns the number hooked; no
 // backups are returned (hook by signature if you need to call the original).
@@ -154,7 +156,7 @@ Status Unhook(JNIEnv* env, const char* class_name, const char* name, const char*
 bool IsHooked(JNIEnv* env, jclass clazz, const char* name, const char* signature);
 bool IsHookedReflected(JNIEnv* env, jobject reflected_method);
 
-// True if the hook is not just recorded but still LIVE — its entry points
+// True if the hook is not just recorded but still LIVE, its entry points
 // haven't been overwritten. Returns false if a hook was silently clobbered:
 // e.g. RegisterNatives re-registering a hooked native method, or ART resetting
 // a static method's entry on class (re)initialization. Re-Hook() to recover.

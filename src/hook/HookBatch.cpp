@@ -2,7 +2,7 @@
 //
 // Batch helper: hook every declared method of a given name on a class, across
 // all overloads. Useful when a target's signature varies across Android
-// versions (e.g. SSL-pinning checks) — the example ssl_bypass hand-rolled
+// versions (e.g. SSL-pinning checks), the example ssl_bypass hand-rolled
 // this pattern.
 
 #include "arthook/ArtHook.h"

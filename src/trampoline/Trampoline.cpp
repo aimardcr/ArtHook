@@ -81,15 +81,13 @@ size_t PageSize() {
     return ps > 0 ? static_cast<size_t>(ps) : 4096;
 }
 
-// 16-byte aligned slot, so the arm64 8-byte literal stays aligned and slots
-// don't share a cache line awkwardly.
+// 16-byte aligned slots (keeps the arm64 8-byte literal aligned).
 size_t SlotSize() {
     return (TemplateSize() + 15u) & ~size_t(15);
 }
 
-// Slots are packed into RWX pages: a page stays writable while it still has
-// free slots (we must write future slots into it while earlier ones execute,
-// so W and X coexist). Allocation allowed on Android via execmem.
+// Slots packed into RWX pages; a page stays writable while it has free slots,
+// so W and X coexist while earlier slots execute (allowed via execmem).
 std::mutex g_pool_mu;
 uint8_t* g_page = nullptr;
 size_t g_page_size = 0;
@@ -109,10 +107,8 @@ TrampolinePage BuildTrampoline(void* target) {
     std::lock_guard<std::mutex> lk(g_pool_mu);
 
     if (!g_page || g_page_off + slot > g_page_size) {
-        // The current page is full and needs no more writes, so try to drop W
-        // (RWX -> RX). Removing W from a page whose other slots are executing
-        // is safe (X is kept). Best-effort: if the platform forbids the
-        // transition we leave it RWX and carry on silently.
+        // Full page needs no more writes: best-effort drop W (RWX -> RX), safe
+        // while slots execute. If the platform forbids it, stay RWX silently.
         if (g_page) ::mprotect(g_page, g_page_size, PROT_READ | PROT_EXEC);
 
         void* mem = ::mmap(nullptr, page, PROT_READ | PROT_WRITE | PROT_EXEC,
@@ -129,8 +125,7 @@ TrampolinePage BuildTrampoline(void* target) {
     uint8_t* s = g_page + g_page_off;
     g_page_off += slot;
 
-    // Written under g_pool_mu so a concurrent fill can't downgrade this page
-    // to RX before the write lands.
+    // Written under the lock so a concurrent fill can't downgrade the page first.
     std::memcpy(s, TemplateBegin(), tsize);
     if (kPatchIs64) {
         uint64_t v = reinterpret_cast<uint64_t>(target);
@@ -147,10 +142,9 @@ TrampolinePage BuildTrampoline(void* target) {
 }
 
 void FreeTrampoline(TrampolinePage) {
-    // No-op. Slots live in shared pooled pages, so we can't munmap one. And
-    // invocation is lock-free, so a thread may still be executing a slot after
-    // Unhook; reusing it would be a use-after-free. We therefore never reclaim
-    // a slot. Install-failure rollback leaks one slot (rare).
+    // No-op: pooled slots can't be unmapped individually, and lock-free
+    // invocation means a slot may still execute after Unhook, so we never
+    // reclaim one (install-failure rollback leaks one slot, rare).
 }
 
 }  // namespace arthook
