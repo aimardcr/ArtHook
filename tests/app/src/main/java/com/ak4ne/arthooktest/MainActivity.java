@@ -110,7 +110,7 @@ public class MainActivity extends AppCompatActivity {
                         int color = colorFor(r.status);
                         appendLine(String.format("[%s] %s/%s (%dms)%s",
                                 r.status, r.category, r.name, r.durationMs,
-                                r.reason == null ? "" : "  — " + r.reason), color);
+                                r.reason == null ? "" : " , " + r.reason), color);
                     }));
             ui.post(() -> {
                 summary.setText(String.format("%d/%d passed  •  %d failed  •  %d skipped",

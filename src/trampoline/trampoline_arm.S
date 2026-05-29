@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 32-bit ARM (armeabi-v7a) trampoline — 12 bytes. ARM mode, not Thumb, so it
+// 32-bit ARM (armeabi-v7a) trampoline, 12 bytes. ARM mode, not Thumb, so it
 // matches the mode of ART's other quick trampolines.
 //
 //   ldr  ip, [pc, #0]    ; PC reads as current+8 in ARM, so this loads
-//                        ;   from offset +8 — the literal slot
+//                        ;   from offset +8, the literal slot
 //   bx   ip              ; tail-call (LR untouched); switches to Thumb if
 //                        ;   the patched address has bit 0 set
 //   .word <patched>

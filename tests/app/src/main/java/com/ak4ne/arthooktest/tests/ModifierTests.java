@@ -42,13 +42,13 @@ public final class ModifierTests {
             // Either way, we should not crash.
             int rc = NativeBridge.installHook("abstract_method");
             if (rc != 0) {
-                // graceful refusal — what we hope for
+                // graceful refusal, what we hope for
                 return;
             }
             try {
                 Targets.ConcreteAbstract c = new Targets.ConcreteAbstract();
                 int v = c.abstractM();
-                // Concrete override should still return 7 — hooking the
+                // Concrete override should still return 7, hooking the
                 // *abstract* slot shouldn't affect the concrete's vtable
                 // entry.
                 Assert.expectEq(7, v, "concrete override should be intact");
@@ -84,7 +84,7 @@ public final class ModifierTests {
                 // Android 13+ optimization for non-overridden defaults).
                 // Hooking the interface's ArtMethod itself would be needed.
                 Assert.skip("ART dispatched past the copied default method "
-                            + "(got \"" + hookedResult + "\") — known limitation");
+                            + "(got \"" + hookedResult + "\"), known limitation");
             }
             Assert.expectEq("default-greet", u.defaultGreet(), "post");
         });
@@ -95,7 +95,7 @@ public final class ModifierTests {
             Assert.expectEq("Parent", p.describe(), "pre parent");
             Assert.expectEq("Child",  c.describe(), "pre child");
 
-            // Hook the CHILD's slot — parent unaffected.
+            // Hook the CHILD's slot, parent unaffected.
             NativeBridge.installOrSkip("child_describe");
             try {
                 Assert.expectEq("Parent", p.describe(), "parent unaffected");

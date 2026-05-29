@@ -216,7 +216,7 @@ public final class MethodKindTests {
                 Assert.expectFalse(Targets.clinitableLoaded,
                                    "clinit must not have run yet");
                 // Reading the field triggers <clinit>, which calls
-                // clinitTarget — which should now hit our hook.
+                // clinitTarget, which should now hit our hook.
                 int seen = ((Integer) cls.getDeclaredField("firstSeen").get(null)).intValue();
                 Assert.expectTrue(Targets.clinitableLoaded, "clinit should have run");
                 Assert.expectEq(Targets.SENTINEL_INT, seen,

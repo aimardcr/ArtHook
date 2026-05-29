@@ -20,6 +20,6 @@ public final class TestResult {
     @Override public String toString() {
         return String.format("[%s] %s/%s (%dms)%s",
                 status, category, name, durationMs,
-                reason == null ? "" : " — " + reason);
+                reason == null ? "" : ", " + reason);
     }
 }

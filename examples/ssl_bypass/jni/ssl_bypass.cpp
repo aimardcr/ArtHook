@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Comprehensive SSL pinning bypass for arthook. Port of Maurizio Siddu's
-// frida_multiple_unpinning.js — best-effort hooks for every well-known
+// frida_multiple_unpinning.js, best-effort hooks for every well-known
 // pinning library; absent targets are silently skipped.
 //
 // Loaded via dlopen by an injector (JsHook / NativeLibrary / zygisk).
@@ -111,7 +111,7 @@ extern "C" jobject Hook_PassthroughFirstArg(
 // For methods whose signature varies across Android versions, hook every
 // overload by name (matching Frida's `Foo.bar.implementation = ...` with
 // no explicit .overload). The caller picks the hook fn whose return-type
-// shape suits every overload — typically that means picking a fn whose
+// shape suits every overload, typically that means picking a fn whose
 // return matches.
 
 int InstallAllByName(JNIEnv* env, jclass c, const char* method_name, void* hook_fn) {
@@ -200,7 +200,7 @@ const HookSpec kSpecs[] = {
      (void*)&Hook_Void},
 
     // --- TrustManagerImpl (apex conscrypt, Android > 7) ---
-    // Signature varies across Android versions — enumerate by name.
+    // Signature varies across Android versions, enumerate by name.
     {"com/android/org/conscrypt/TrustManagerImpl",
      "checkTrustedRecursive",
      nullptr,
@@ -254,7 +254,7 @@ const HookSpec kSpecs[] = {
      "(Ljava/lang/String;Lorg/json/JSONArray;Lorg/apache/cordova/CallbackContext;)Z",
      (void*)&Hook_BoolTrue},
 
-    // --- IBM MobileFirst (instance methods on WLClient singleton — Frida
+    // --- IBM MobileFirst (instance methods on WLClient singleton, Frida
     //     dispatches through getInstance(); we hook the method on the
     //     class directly, ART finds the instance ArtMethod) ---
     {"com/worklight/wlclient/api/WLClient",
@@ -413,7 +413,7 @@ void* MainThread(void* /*arg*/) {
         for (const HookSpec& spec : kSpecs) {
             total += TryInstall(env, spec);
         }
-        LOGI("[+] bypass active — %d hook(s) installed", total);
+        LOGI("[+] bypass active, %d hook(s) installed", total);
     });
     return nullptr;
 }

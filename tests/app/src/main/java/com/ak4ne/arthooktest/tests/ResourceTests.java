@@ -16,7 +16,7 @@ public final class ResourceTests {
                 Assert.expectEq(0, NativeBridge.uninstallHook("instance_int_arg"));
             }
             int fdAfter = NativeBridge.openFdCount();
-            // Allow tiny slack — Android may open transient fds for class loading.
+            // Allow tiny slack, Android may open transient fds for class loading.
             int delta = fdAfter - fdBefore;
             Assert.expectTrue(delta <= 4,
                               "fd leak: before=" + fdBefore + " after=" + fdAfter);

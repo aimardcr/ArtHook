@@ -36,16 +36,16 @@ public final class FailureTests {
         });
 
         r.add(CAT, "hook_before_initialize", () -> {
-            // We cannot un-initialize arthook for one test. Skip — this case
+            // We cannot un-initialize arthook for one test. Skip, this case
             // is covered indirectly by the very first launch of the app.
             Assert.skip("arthook stays initialized for process lifetime");
         });
 
         r.add(CAT, "hook_abstract_method", () -> {
-            // Same expectation as ModifierTests.abstract_method_graceful —
+            // Same expectation as ModifierTests.abstract_method_graceful,
             // no crash. Reuse the same key.
             int rc = NativeBridge.installHook("abstract_method");
-            // Either zero (best-effort install) or non-zero — both fine.
+            // Either zero (best-effort install) or non-zero, both fine.
             if (rc == 0) NativeBridge.uninstallHook("abstract_method");
         });
     }

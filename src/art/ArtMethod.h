@@ -2,7 +2,7 @@
 //
 // Offset-based accessors for ART's ArtMethod. The fields we touch
 // (access_flags_, entry_point_from_jni_, entry_point_from_quick_compiled_code_)
-// have always been present, just at version-dependent offsets — supplied
+// have always been present, just at version-dependent offsets, supplied
 // at runtime by the Layout singleton.
 
 #ifndef ARTHOOK_ART_ARTMETHOD_H_
@@ -17,7 +17,7 @@ namespace arthook {
 
 using ArtMethodPtr = void*;
 
-// Plain cast — safe only for jmethodIDs we minted ourselves. For IDs from
+// Plain cast, safe only for jmethodIDs we minted ourselves. For IDs from
 // env->GetMethodID() on Android 11+, use the resolvers below: they handle
 // the kSwapablePointer-mode (index << 1) | 1 encoding.
 ArtMethodPtr ArtMethodFromMethodId(jmethodID id);

@@ -1,4 +1,4 @@
-# Test app — consumes arthook from five directories up.
+# Test app, consumes arthook from five directories up.
 
 cmake_minimum_required(VERSION 3.22.1)
 project("arthooktest")

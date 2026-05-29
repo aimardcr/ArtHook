@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// arm64 trampoline template — 16 bytes.
+// arm64 trampoline template, 16 bytes.
 //
 //   ldr  x16, [pc, #8]   ; load patched literal into IP0 (scratch per AAPCS64)
 //   br   x16             ; tail-call; LR untouched

@@ -49,16 +49,16 @@ categories. Pass/fail signal feeds back into arthook regressions.
 ## Interpreting results
 
 - **PASS**: arthook handled the scenario correctly.
-- **FAIL**: a regression — open with the logcat line attached.
+- **FAIL**: a regression, open with the logcat line attached.
 - **SKIP**: known limitation. See `TESTING.md` for what each skip
   reason means.
 
 Common expected SKIPs on a clean build (Android 8–15):
 
-- `hook_before_initialize` — arthook is process-lifetime singleton.
-- `static_initializer_interaction` — only runs on the first launch of
+- `hook_before_initialize`, arthook is process-lifetime singleton.
+- `static_initializer_interaction`, only runs on the first launch of
   the process; rerunning the suite re-skips.
-- `hook_after_jit_warmup` / `warmup_caller_after_hook` — may skip if
+- `hook_after_jit_warmup` / `warmup_caller_after_hook`, may skip if
   the JIT inlined the original before the hook installed.
 
 ## Multi-ABI

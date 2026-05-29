@@ -29,7 +29,7 @@ CMakeLists.txt  text eol=lf
 gradlew         text eol=lf
 *.sh            text eol=lf
 
-# Binary — leave alone
+# Binary, leave alone
 *.a       binary
 *.so      binary
 *.jar     binary

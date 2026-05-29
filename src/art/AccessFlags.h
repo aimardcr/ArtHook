@@ -36,27 +36,17 @@ constexpr uint32_t kAccDeclaredSynchronized = 0x00020000;
 constexpr uint32_t kAccConstructor = 0x00010000;
 constexpr uint32_t kAccInterface = 0x0200;  // same bit as for classes
 
-// Bits at 0x00100000 / 0x00040000 / 0x00800000 carry overloaded ART-private
-// meanings ("intrinsified", "obsolete", "previously-warm") depending on
-// Android version. Left set, they steer ART's JNI bridge into specialized
-// code paths that mishandle object-typed args (bridge passes IRT slot
-// pointers in the wrong registers — `env` ends up looking like an IRT slot
-// address). Cleared, the method dispatches through the plain generic JNI
-// bridge for any signature.
+// Overloaded ART-private bits (meanings/positions vary by version). Left set,
+// they route the JNI bridge through specialized paths that misplace object
+// args; cleared, dispatch uses the plain generic bridge.
 constexpr uint32_t kAccIntrinsified = 0x00100000;
 constexpr uint32_t kAccObsoleteMethod = 0x00040000;
 constexpr uint32_t kAccSingleImpl = 0x08000000;
 
-// Cleared on hook install. We force-clear:
-//   - access modifiers other than what we re-add (kAccPrivate / kAccNative)
-//   - kAccAbstract / kAccInterface / kAccDefault — non-concrete method
-//     attributes
-//   - kAccSynchronized / kAccDeclaredSynchronized — bridge would set up
-//     monitor enter/exit we don't want
-//   - kAccFastNative / kAccCriticalNative / kAccPreCompiled — fast-path
-//     dispatch variants that bypass entry_point_from_jni_
-//   - kAccIntrinsified / kAccObsoleteMethod / kAccSingleImpl — runtime
-//     hints that make the bridge dispatch object args wrong on Android 13+
+// Cleared on hook install: stale modifiers, non-concrete attributes,
+// synchronized (avoid bridge monitor setup), and the fast/critical/
+// pre-compiled/intrinsified dispatch shortcuts that bypass the generic JNI
+// bridge or misroute object args on Android 13+.
 constexpr uint32_t kAccHookClearMask = kAccPublic | kAccProtected | kAccAbstract | kAccInterface |
                                        kAccDefault | kAccSynchronized | kAccDeclaredSynchronized |
                                        kAccFastNative | kAccCriticalNative | kAccPreCompiled |

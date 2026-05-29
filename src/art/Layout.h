@@ -17,7 +17,7 @@ struct ArtMethodLayout {
     size_t offset_entry_point_jni = static_cast<size_t>(-1);
     size_t offset_entry_point_quick_code = static_cast<size_t>(-1);
 
-    // Sampled from Object.notify()'s quick entry — the standard JNI bridge
+    // Sampled from Object.notify()'s quick entry, the standard JNI bridge
     // (art_quick_generic_jni_trampoline on AOSP). Installed as the new
     // quick entry when hooking a non-native method, so ART's existing
     // bridge code does the quick→JNI ABI fix-up for our replacement.

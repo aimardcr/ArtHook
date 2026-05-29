@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Runtime-built probe dex. Loaded via InMemoryDexClassLoader so the probe
-// class can't live in boot.oat — its single native method's quick entry is
+// class can't live in boot.oat, its single native method's quick entry is
 // therefore the generic JNI bridge (or, on Android 11+, the resolution
 // trampoline at a known offset from it). Used by Layout.cpp as the
 // third-tier fallback when neither the libart .dynsym nor any Object

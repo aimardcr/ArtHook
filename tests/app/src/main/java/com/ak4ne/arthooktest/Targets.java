@@ -25,11 +25,11 @@ public final class Targets {
     public float   argFloat(float v)     { return v + 1.0f; }
     public double  argDouble(double v)   { return v + 1.0; }
 
-    // Mixed long/double — exercises 64-bit arg passing.
+    // Mixed long/double, exercises 64-bit arg passing.
     public long    longDoubleInt(long a, double b, int c) { return a + (long)b + c; }
     public double  manyDoubles(double a, double b, double c, double d) { return a + b + c + d; }
 
-    // Eight ints — forces stack-passed args on arm64.
+    // Eight ints, forces stack-passed args on arm64.
     public int     eightInts(int a, int b, int c, int d, int e, int f, int g, int h) {
         return a + b + c + d + e + f + g + h;
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// memcpy-based offset reads/writes — avoids UB from type-punning through
+// memcpy-based offset reads/writes, avoids UB from type-punning through
 // unrelated pointer types.
 
 #ifndef ARTHOOK_UTIL_MEMORY_H_

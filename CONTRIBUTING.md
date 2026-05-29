@@ -1,6 +1,6 @@
 # Contributing to arthook
 
-Thanks for your interest. arthook is a small, focused library — patches are
+Thanks for your interest. arthook is a small, focused library, patches are
 welcome, but the bar for additions is that they keep the dependency surface
 zero and don't increase per-device fragility.
 
@@ -21,12 +21,12 @@ Repeat with `armeabi-v7a`, `x86_64`, `x86` for the other ABIs.
 
 ## Running the test suite
 
-The test app under `tests/` is a standard Android Studio project — open it,
+The test app under `tests/` is a standard Android Studio project, open it,
 deploy to a device or emulator running API 26+, and tap **Run all**.
 Categories are also runnable individually. See `tests/TESTING.md` for what
 each test category verifies and the `SKIP` semantics.
 
-To rerun after editing arthook itself, just rebuild the test app — Gradle
+To rerun after editing arthook itself, just rebuild the test app, Gradle
 picks up the CMake subproject automatically.
 
 ## Code style
@@ -51,7 +51,7 @@ Other conventions worth knowing:
 
 ## What kinds of PRs are welcome
 
-- New Android version support — if you have a device where layout discovery
+- New Android version support, if you have a device where layout discovery
   or bridge sampling fails, please attach the logcat from
   `arthook::Initialize` and we'll figure it out.
 - Bug fixes with a reproducer test in `tests/`.
@@ -62,7 +62,7 @@ Other conventions worth knowing:
 ## What's likely to be declined
 
 - New external dependencies. The zero-dependency property is a feature.
-- Hooking strategies that require root or a privileged daemon (out of scope —
+- Hooking strategies that require root or a privileged daemon (out of scope,
   arthook is the *in-process* hooking primitive only).
 - Generic argument-logging / libffi-style dispatch. The expectation is the
   caller knows the JNI signature of the target.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// x86_64 trampoline — 14 bytes.
+// x86_64 trampoline, 14 bytes.
 //
 //   ff 25 00 00 00 00      jmp qword ptr [rip+0]    ; indirect via literal
 //   <8 bytes>              patched target

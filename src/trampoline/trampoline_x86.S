@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// 32-bit x86 trampoline — 6 bytes. Position-independent push-imm32 / ret
+// 32-bit x86 trampoline, 6 bytes. Position-independent push-imm32 / ret
 // pattern (no rip-relative addressing available on i386):
 //
 //   68 ?? ?? ?? ??         push imm32      ; patched target

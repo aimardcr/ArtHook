@@ -26,7 +26,7 @@ public final class SslBypassTests {
                     "check$okhttp", String.class, Function0.class);
             check.setAccessible(true);
 
-            // Build a Function0 that returns an EMPTY list of certs — the real
+            // Build a Function0 that returns an EMPTY list of certs, the real
             // checker compares this against the pin set and rejects mismatch.
             Function0<java.util.List<java.security.cert.Certificate>> emptyCerts =
                     () -> java.util.Collections.emptyList();

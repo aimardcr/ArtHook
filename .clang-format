@@ -1,4 +1,4 @@
-# arthook style — based on Google with small tweaks for the dense C++17
+# arthook style, based on Google with small tweaks for the dense C++17
 # / JNI / inline-asm flavor of this codebase.
 BasedOnStyle: Google
 Language: Cpp

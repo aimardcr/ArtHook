@@ -75,7 +75,7 @@ std::atomic<int> g_trampoline_pages_in_use{0};
 
 extern "C" {
 
-// (II)I — Targets.staticAdd
+// (II)I, Targets.staticAdd
 jint Hook_static_int_add(JNIEnv*, jclass, jint a, jint b) {
     auto& s = State("static_int_add");
     s.fire_count++;
@@ -84,12 +84,12 @@ jint Hook_static_int_add(JNIEnv*, jclass, jint a, jint b) {
     return SENTINEL_INT;
 }
 
-// ()V — Targets.staticDoNothing
+// ()V, Targets.staticDoNothing
 void Hook_static_void(JNIEnv*, jclass) {
     State("static_void_no_args").fire_count++;
 }
 
-// (I)I — instance Targets.argInt
+// (I)I, instance Targets.argInt
 jint Hook_instance_int_arg(JNIEnv*, jobject, jint v) {
     auto& s = State("instance_int_arg");
     s.fire_count++;
@@ -104,7 +104,7 @@ jint Hook_arg_int_alt(JNIEnv*, jobject, jint v) {
     return SENTINEL_INT;
 }
 
-// (Ljava/lang/String;)Ljava/lang/String; — Targets.concat
+// (Ljava/lang/String;)Ljava/lang/String;, Targets.concat
 jstring Hook_instance_string_concat(JNIEnv* env, jobject, jstring arg) {
     auto& s = State("instance_string_concat");
     s.fire_count++;
@@ -119,7 +119,7 @@ jstring Hook_instance_string_concat(JNIEnv* env, jobject, jstring arg) {
     return env->NewStringUTF(SENTINEL_STRING);
 }
 
-// Wrap-pattern hook for concat — calls the backup via CallNonvirtual so the
+// Wrap-pattern hook for concat, calls the backup via CallNonvirtual so the
 // vtable lookup doesn't re-resolve to the patched (= recursive) target.
 jstring Hook_wrap_concat(JNIEnv* env, jobject thiz, jstring arg) {
     auto& s = State("wrap_concat_with_backup");
@@ -144,7 +144,7 @@ jstring Hook_wrap_concat(JNIEnv* env, jobject thiz, jstring arg) {
     return env->NewStringUTF(wrapped.c_str());
 }
 
-// okhttp3.CertificatePinner.check$okhttp(String, Function0)V — calls the
+// okhttp3.CertificatePinner.check$okhttp(String, Function0)V, calls the
 // backup, then swallows any SSLPeerUnverifiedException so the caller sees
 // "no pin violation".
 void Hook_okhttp_pinner_bypass(JNIEnv* env, jobject self, jstring host, jobject fn) {
@@ -155,13 +155,13 @@ void Hook_okhttp_pinner_bypass(JNIEnv* env, jobject self, jstring host, jobject 
     if (env->ExceptionCheck()) env->ExceptionClear();
 }
 
-// ()Ljava/lang/String; — Targets.FinalGreeter.greet
+// ()Ljava/lang/String;, Targets.FinalGreeter.greet
 jstring Hook_final_class_method(JNIEnv* env, jobject) {
     State("final_class_method").fire_count++;
     return env->NewStringUTF(SENTINEL_STRING);
 }
 
-// (JDI)J — Targets.longDoubleInt
+// (JDI)J, Targets.longDoubleInt
 jlong Hook_long_double_int(JNIEnv*, jobject, jlong a, jdouble b, jint c) {
     auto& s = State("long_double_int_args");
     s.fire_count++;
@@ -171,7 +171,7 @@ jlong Hook_long_double_int(JNIEnv*, jobject, jlong a, jdouble b, jint c) {
     return SENTINEL_LONG;
 }
 
-// (DDDD)D — Targets.manyDoubles
+// (DDDD)D, Targets.manyDoubles
 jdouble Hook_many_doubles(JNIEnv*, jobject, jdouble a, jdouble b, jdouble c, jdouble d) {
     auto& s = State("double_return_many_doubles");
     s.fire_count++;
@@ -182,7 +182,7 @@ jdouble Hook_many_doubles(JNIEnv*, jobject, jdouble a, jdouble b, jdouble c, jdo
     return SENTINEL_DOUBLE;
 }
 
-// (IIIIIIII)I — Targets.eightInts
+// (IIIIIIII)I, Targets.eightInts
 jint Hook_eight_ints(
     JNIEnv*, jobject, jint a, jint b, jint c, jint d, jint e, jint f, jint g, jint h) {
     auto& s = State("eight_int_args");
@@ -198,13 +198,13 @@ jint Hook_eight_ints(
     return SENTINEL_INT;
 }
 
-// ()Ljava/lang/Object; — Targets.returnNull
+// ()Ljava/lang/Object;, Targets.returnNull
 jobject Hook_returns_null(JNIEnv*, jobject) {
     State("returns_null").fire_count++;
     return nullptr;
 }
 
-// ()I — Targets.throwsRuntime
+// ()I, Targets.throwsRuntime
 jint Hook_throws_exception(JNIEnv* env, jobject) {
     State("throws_exception").fire_count++;
     jclass cls = env->FindClass("java/lang/RuntimeException");
@@ -213,13 +213,13 @@ jint Hook_throws_exception(JNIEnv* env, jobject) {
     return 0;
 }
 
-// ()Ljava/lang/String; — PackagePrivateClass.hello
+// ()Ljava/lang/String;, PackagePrivateClass.hello
 jstring Hook_package_private(JNIEnv* env, jobject) {
     State("package_private_class").fire_count++;
     return env->NewStringUTF(SENTINEL_STRING);
 }
 
-// ()I — Targets.callPrivateM
+// ()I, Targets.callPrivateM
 jint Hook_private_method(JNIEnv*, jobject) {
     State("private_method").fire_count++;
     return SENTINEL_INT;
@@ -230,46 +230,46 @@ jint Hook_call_private_m(JNIEnv*, jobject) {
     return SENTINEL_INT;
 }
 
-// ()I — Targets.protectedM
+// ()I, Targets.protectedM
 jint Hook_protected_method(JNIEnv*, jobject) {
     State("protected_method").fire_count++;
     return SENTINEL_INT;
 }
 
-// (I)V — Targets.CtorTarget.<init>
+// (I)V, Targets.CtorTarget.<init>
 void Hook_constructor_init(JNIEnv*, jobject, jint v) {
     auto& s = State("constructor_init");
     s.fire_count++;
     s.last_long[0] = v;
-    // Do NOT call backup — leave the new object's fields at defaults so
+    // Do NOT call backup, leave the new object's fields at defaults so
     // the test can verify the body was skipped.
 }
 
-// ()I — Targets.Clinitable.clinitTarget
+// ()I, Targets.Clinitable.clinitTarget
 jint Hook_clinit_target(JNIEnv*, jclass) {
     State("clinit_target").fire_count++;
     return SENTINEL_INT;
 }
 
-// ()I — Targets.syncIncrement
+// ()I, Targets.syncIncrement
 jint Hook_synchronized(JNIEnv*, jobject) {
     State("synchronized_method").fire_count++;
     return SENTINEL_INT;
 }
 
-// ()I — Targets.finalReturn42
+// ()I, Targets.finalReturn42
 jint Hook_final_method(JNIEnv*, jobject) {
     State("final_method").fire_count++;
     return SENTINEL_INT;
 }
 
-// ()I — Targets.WithAbstract.abstractM
+// ()I, Targets.WithAbstract.abstractM
 jint Hook_abstract(JNIEnv*, jobject) {
     State("abstract_method").fire_count++;
     return SENTINEL_INT;
 }
 
-// (II)I — Targets.nativeAddJni (registered via RegisterNatives)
+// (II)I, Targets.nativeAddJni (registered via RegisterNatives)
 jint Hook_native_registered(JNIEnv*, jclass, jint a, jint b) {
     auto& s = State("native_registered");
     s.fire_count++;
@@ -278,13 +278,13 @@ jint Hook_native_registered(JNIEnv*, jclass, jint a, jint b) {
     return SENTINEL_INT;
 }
 
-// ()Ljava/lang/String; — Targets.UsesDefault.defaultGreet
+// ()Ljava/lang/String;, Targets.UsesDefault.defaultGreet
 jstring Hook_interface_default(JNIEnv* env, jobject) {
     State("interface_default").fire_count++;
     return env->NewStringUTF(SENTINEL_STRING);
 }
 
-// ()Ljava/lang/String; — Targets.Child.describe
+// ()Ljava/lang/String;, Targets.Child.describe
 jstring Hook_child_describe(JNIEnv* env, jobject) {
     State("child_describe").fire_count++;
     return env->NewStringUTF(SENTINEL_STRING);
@@ -335,7 +335,7 @@ jdouble Hook_arg_double(JNIEnv*, jobject, jdouble v) {
     return 0.0;
 }
 
-// (Ljava/lang/Object;)Z — Targets.isObjectNull
+// (Ljava/lang/Object;)Z, Targets.isObjectNull
 jboolean Hook_is_object_null(JNIEnv*, jobject, jobject o) {
     auto& s = State("is_object_null");
     s.fire_count++;
@@ -343,7 +343,7 @@ jboolean Hook_is_object_null(JNIEnv*, jobject, jobject o) {
     return JNI_FALSE;
 }
 
-// (Ljava/lang/String;)I — Targets.measureString
+// (Ljava/lang/String;)I, Targets.measureString
 jint Hook_measure_string(JNIEnv* env, jobject, jstring s) {
     auto& st = State("measure_string");
     st.fire_count++;
@@ -355,7 +355,7 @@ jint Hook_measure_string(JNIEnv* env, jobject, jstring s) {
     return 0;
 }
 
-// ([Ljava/lang/Object;)I — Targets.countNullsInArray
+// ([Ljava/lang/Object;)I, Targets.countNullsInArray
 jint Hook_count_nulls(JNIEnv* env, jobject, jobjectArray arr) {
     auto& s = State("count_nulls");
     s.fire_count++;
@@ -639,14 +639,14 @@ const Spec kSpecs[] = {
      "(D)D",
      reinterpret_cast<void*>(&Hook_thread_keys_h)},
 
-    // OkHttp SSL pinning bypass — call-original-then-swallow pattern.
+    // OkHttp SSL pinning bypass, call-original-then-swallow pattern.
     {"okhttp_certificate_pinner_bypass",
      "okhttp3/CertificatePinner",
      "check$okhttp",
      "(Ljava/lang/String;Lkotlin/jvm/functions/Function0;)V",
      reinterpret_cast<void*>(&Hook_okhttp_pinner_bypass)},
 
-    // Failure-mode keys — these intentionally don't resolve.
+    // Failure-mode keys, these intentionally don't resolve.
     {"nonexistent_class",
      "com/ak4ne/arthooktest/NoSuchClass",
      "foo",
@@ -861,7 +861,7 @@ JNIEXPORT jstring JNICALL Java_com_ak4ne_arthooktest_testkit_NativeBridge_invoke
     auto& s = State(c_key);
     env->ReleaseStringUTFChars(jkey, c_key);
     if (!s.backup_jm || !s.declaring_class) return env->NewStringUTF("NO_BACKUP");
-    // Non-virtual dispatch — required, because the backup ArtMethod shares
+    // Non-virtual dispatch, required, because the backup ArtMethod shares
     // method_index_ with the target. Virtual dispatch through `thiz`'s
     // vtable would resolve to the target (hooked) ArtMethod instead.
     jstring r = (jstring)env->CallNonvirtualObjectMethod(thiz, s.declaring_class, s.backup_jm, arg);

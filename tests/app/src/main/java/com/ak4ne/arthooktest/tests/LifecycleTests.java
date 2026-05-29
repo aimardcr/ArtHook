@@ -35,7 +35,7 @@ public final class LifecycleTests {
             try {
                 int v = t.argInt(7);
                 if (v != Targets.SENTINEL_INT) {
-                    Assert.skip("JIT-compiled callers retained inlined original — "
+                    Assert.skip("JIT-compiled callers retained inlined original, "
                                 + "known limitation when callers inlined the target");
                 }
             } finally {
@@ -55,7 +55,7 @@ public final class LifecycleTests {
                     acc += r2;
                     if (r2 != Targets.SENTINEL_INT) {
                         Assert.skip("hook missed at iter " + i
-                                    + " — likely JIT inlining of original");
+                                    + ", likely JIT inlining of original");
                     }
                 }
                 Assert.expectTrue(acc != Integer.MIN_VALUE, "guard");
