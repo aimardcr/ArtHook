@@ -2,15 +2,16 @@
 //
 // HookEngine: install/remove ArtMethod-level hooks.
 //
-// Threading: only Hook/HookReflected/Unhook take the mutex. Hooked-method
-// invocation is lock-free — the trampoline contains no synchronization,
-// and ArtMethod entry writes are word-sized, naturally aligned, and
-// single-copy atomic on arm64/x86, so live hot-swaps are safe.
+// Threading: install/remove take g_mutex; invocation is lock-free (entry
+// writes are word-sized and aligned). Because invocation is lock-free,
+// Unhook leaks the trampoline page rather than risk freeing one a thread is
+// still executing.
 
 #include "hook/HookEngine.h"
 
 #include <jni.h>
 
+#include <atomic>
 #include <cstdint>
 #include <cstdlib>
 #include <mutex>
@@ -19,6 +20,7 @@
 #include "art/AccessFlags.h"
 #include "art/ArtMethod.h"
 #include "art/Layout.h"
+#include "jvm/ClassLookup.h"
 #include "trampoline/Trampoline.h"
 #include "util/Log.h"
 
@@ -33,9 +35,11 @@ struct HookEntry {
     void* original_quick_entry = nullptr;
     void* original_jni_entry = nullptr;
     TrampolinePage trampoline = {};
+    jclass declaring_class_ref = nullptr;  // GlobalRef pinning the class
 };
 
-bool g_initialized = false;
+// Atomic: read unlocked at the top of Hook/Unhook, written under g_mutex.
+std::atomic<bool> g_initialized{false};
 std::mutex g_mutex;
 std::unordered_map<ArtMethodPtr, HookEntry> g_hooks;
 
@@ -49,11 +53,12 @@ void FreeArtMethodSlot(void* p) {
     std::free(p);
 }
 
-// Install a hook on `target`. Caller must hold g_mutex and have verified
-// g_initialized + non-null replacement. Returns kOk on success and stores
-// the backup handle in *backup_out (fn pointer for native targets,
-// jmethodID-shaped pointer to the backup ArtMethod for non-native).
-Status InstallHookLocked(ArtMethodPtr target, void* replacement, void** backup_out) {
+// Install a hook on `target`. Caller holds g_mutex. `declaring` (may be null)
+// is pinned via a GlobalRef so its LinearAlloc (holding `target`) survives
+// the hook. backup_out gets the native fn pointer, or the backup ArtMethod as
+// a jmethodID for non-native targets.
+Status InstallHookLocked(
+    JNIEnv* env, jclass declaring, ArtMethodPtr target, void* replacement, void** backup_out) {
     if (g_hooks.find(target) != g_hooks.end()) return Status::kAlreadyHooked;
 
     HookEntry e;
@@ -63,7 +68,7 @@ Status InstallHookLocked(ArtMethodPtr target, void* replacement, void** backup_o
     e.original_jni_entry = GetEntryPointFromJni(target);
 
     e.backup_storage = AllocateArtMethodSlot();
-    if (!e.backup_storage) return Status::kInternalError;
+    if (!e.backup_storage) return Status::kOutOfMemory;
     CopyArtMethod(e.backup_storage, target);
 
     e.trampoline = BuildTrampoline(replacement);
@@ -72,10 +77,7 @@ Status InstallHookLocked(ArtMethodPtr target, void* replacement, void** backup_o
         return Status::kTrampolineAllocFailed;
     }
 
-    // Force the target into a plain `private native` shape with
-    // CompileDontBother set; clearing kAccHookClearMask is what gets the
-    // generic JNI bridge to dispatch object args correctly on Android 13+
-    // (see AccessFlags.h for the per-bit rationale).
+    // Reshape to `private native` + CompileDontBother (see AccessFlags.h).
     const bool was_native = (e.original_flags & kAccNative) != 0;
     uint32_t flags = e.original_flags;
     flags &= ~kAccHookClearMask;
@@ -84,28 +86,42 @@ Status InstallHookLocked(ArtMethodPtr target, void* replacement, void** backup_o
     flags |= kAccCompileDontBother;
     SetAccessFlags(target, flags);
 
-    // The replacement is JNI-shaped (JNIEnv*, jobject|jclass, args...) and
-    // must be entered with the JNI calling convention. For native targets
-    // the existing quick entry already converts; for non-native targets
-    // install the sampled bridge as the new quick entry.
+    // Enter via the JNI ABI: native keeps its quick entry; non-native gets
+    // the sampled bridge as its quick entry.
     SetEntryPointFromJni(target, e.trampoline.entry);
     if (!was_native) {
-        if (!Layout().jni_bridge_quick_entry) {
-            LOGE("InstallHookLocked: no JNI bridge sampled — cannot hook non-native method");
+        void* bridge = Layout().jni_bridge_quick_entry;
+        if (!bridge) {
+            LOGE("InstallHookLocked: no JNI bridge sampled, cannot hook non-native method");
             SetEntryPointFromJni(target, e.original_jni_entry);
             SetAccessFlags(target, e.original_flags);
             FreeTrampoline(e.trampoline);
             FreeArtMethodSlot(e.backup_storage);
-            return Status::kInternalError;
+            return Status::kNoJniBridge;
         }
-        SetEntryPointFromQuickCompiledCode(target, Layout().jni_bridge_quick_entry);
+        SetEntryPointFromQuickCompiledCode(target, bridge);
+        // Re-store if a concurrent JIT compile clobbered it (best effort).
+        if (GetEntryPointFromQuickCompiledCode(target) != bridge) {
+            SetEntryPointFromQuickCompiledCode(target, bridge);
+        }
+    }
+
+    // Pin the declaring class (last, so earlier failures need no ref rollback).
+    if (env && declaring) {
+        e.declaring_class_ref = static_cast<jclass>(env->NewGlobalRef(declaring));
+        if (!e.declaring_class_ref) {
+            SetEntryPointFromQuickCompiledCode(target, e.original_quick_entry);
+            SetEntryPointFromJni(target, e.original_jni_entry);
+            SetAccessFlags(target, e.original_flags);
+            FreeTrampoline(e.trampoline);
+            FreeArtMethodSlot(e.backup_storage);
+            return Status::kOutOfMemory;
+        }
     }
 
     if (backup_out) {
-        // Native targets: the original JNI entry is already a callable C fn
-        // with JNI ABI — hand it back so the user can invoke it directly.
-        // Non-native targets: no such C fn exists, so hand back the backup
-        // ArtMethod as a jmethodID for use via env->CallNonvirtual*Method.
+        // Native: the original JNI fn pointer. Non-native: the backup
+        // ArtMethod as a jmethodID (for env->CallNonvirtual*Method).
         *backup_out = was_native ? e.original_jni_entry : ArtMethodToMethodId(e.backup_storage);
     }
 
@@ -113,20 +129,42 @@ Status InstallHookLocked(ArtMethodPtr target, void* replacement, void** backup_o
     return Status::kOk;
 }
 
+// Resolve the declaring class of a reflected Method/Constructor as a local
+// ref (caller deletes), nullptr on failure with exceptions cleared.
+jclass DeclaringClassOfReflected(JNIEnv* env, jobject reflected) {
+    jclass mcls = env->GetObjectClass(reflected);
+    if (!mcls) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return nullptr;
+    }
+    jmethodID m = env->GetMethodID(mcls, "getDeclaringClass", "()Ljava/lang/Class;");
+    env->DeleteLocalRef(mcls);
+    if (!m) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        return nullptr;
+    }
+    jobject cls = env->CallObjectMethod(reflected, m);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        return nullptr;
+    }
+    return static_cast<jclass>(cls);
+}
+
 }  // namespace
 
 Status HookEngine::Initialize(JNIEnv* env) {
+    if (!env) return Status::kInvalidArgument;
     std::lock_guard<std::mutex> lk(g_mutex);
     if (g_initialized) return Status::kOk;
     if (!DiscoverLayout(env)) return Status::kLayoutDiscoveryFailed;
-    g_initialized = true;
+    g_initialized = true;  // publish under g_mutex; readers acquire it before g_layout
     LOGI("HookEngine initialized");
     return Status::kOk;
 }
 
 bool HookEngine::IsInitialized() {
-    std::lock_guard<std::mutex> lk(g_mutex);
-    return g_initialized;
+    return g_initialized.load();
 }
 
 Status HookEngine::Hook(JNIEnv* env,
@@ -137,13 +175,13 @@ Status HookEngine::Hook(JNIEnv* env,
                         void** backup_out) {
     if (!g_initialized) return Status::kNotInitialized;
     if (!env || !clazz || !name || !signature || !replacement) {
-        return Status::kInternalError;
+        return Status::kInvalidArgument;
     }
     ArtMethodPtr target = ArtMethodFromJniBinding(env, clazz, name, signature);
     if (!target) return Status::kMethodNotFound;
 
     std::lock_guard<std::mutex> lk(g_mutex);
-    Status s = InstallHookLocked(target, replacement, backup_out);
+    Status s = InstallHookLocked(env, clazz, target, replacement, backup_out);
     if (s == Status::kOk) {
         LOGI("Hooked %s%s (target=%p replacement=%p backup=%p)",
              name,
@@ -160,12 +198,16 @@ Status HookEngine::HookReflected(JNIEnv* env,
                                  void* replacement,
                                  void** backup_out) {
     if (!g_initialized) return Status::kNotInitialized;
-    if (!env || !reflected || !replacement) return Status::kInternalError;
+    if (!env || !reflected || !replacement) return Status::kInvalidArgument;
     ArtMethodPtr target = ArtMethodFromReflected(env, reflected);
     if (!target) return Status::kMethodNotFound;
 
+    // Pin the declaring class (best-effort) so the method's storage survives.
+    jclass declaring = DeclaringClassOfReflected(env, reflected);
+
     std::lock_guard<std::mutex> lk(g_mutex);
-    Status s = InstallHookLocked(target, replacement, backup_out);
+    Status s = InstallHookLocked(env, declaring, target, replacement, backup_out);
+    if (declaring) env->DeleteLocalRef(declaring);
     if (s == Status::kOk) {
         LOGI("Hooked reflected method (target=%p backup=%p)",
              target,
@@ -176,7 +218,7 @@ Status HookEngine::HookReflected(JNIEnv* env,
 
 Status HookEngine::Unhook(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
     if (!g_initialized) return Status::kNotInitialized;
-    if (!env || !clazz || !name || !signature) return Status::kInternalError;
+    if (!env || !clazz || !name || !signature) return Status::kInvalidArgument;
     ArtMethodPtr target = ArtMethodFromJniBinding(env, clazz, name, signature);
     if (!target) return Status::kMethodNotFound;
 
@@ -189,11 +231,10 @@ Status HookEngine::Unhook(JNIEnv* env, jclass clazz, const char* name, const cha
     SetEntryPointFromJni(target, e.original_jni_entry);
     SetAccessFlags(target, e.original_flags);
 
-    // backup_storage is intentionally leaked: callers may still hold the
-    // jmethodID we returned. Trampoline memory IS freed — no live ArtMethod
-    // references it after the writes above land.
-    FreeTrampoline(e.trampoline);
-    e.trampoline = {};
+    // Leak backup_storage and the trampoline page: invocation is lock-free,
+    // so a thread may still be in the thunk, freeing it would be a UAF.
+    // One page + slot per unhook, so avoid tight hook/unhook loops.
+    if (e.declaring_class_ref) env->DeleteGlobalRef(e.declaring_class_ref);
 
     g_hooks.erase(it);
     LOGI("Unhooked %s%s (target=%p)", name, signature, target);
@@ -210,19 +251,29 @@ bool IsInitialized() {
 }
 
 bool HasJniBridge() {
+    std::lock_guard<std::mutex> lk(g_mutex);
     return Layout().jni_bridge_quick_entry != nullptr;
 }
 
-Status SetBridgeProbe(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
+static Status SetBridgeProbeImpl(
+    JNIEnv* env, jclass clazz, const char* name, const char* signature, bool force) {
     if (!HookEngine::IsInitialized()) return Status::kNotInitialized;
-    if (!env || !clazz || !name || !signature) return Status::kInternalError;
-    // Prefer the bridge captured by Initialize — a user-supplied probe
-    // could still be at art_quick_resolution_trampoline if its method
-    // hasn't been resolved yet.
-    if (HasJniBridge()) return Status::kOk;
+    if (!env || !clazz || !name || !signature) return Status::kInvalidArgument;
     ArtMethodPtr m = ArtMethodFromJniBinding(env, clazz, name, signature);
     if (!m) return Status::kMethodNotFound;
-    return SetJniBridgeFromMethod(m) ? Status::kOk : Status::kInternalError;
+    std::lock_guard<std::mutex> lk(g_mutex);
+    // Non-force keeps the auto-captured bridge (read directly, we hold
+    // g_mutex). SetJniBridgeFromMethod re-validates even the force path.
+    if (!force && Layout().jni_bridge_quick_entry) return Status::kOk;
+    return SetJniBridgeFromMethod(m) ? Status::kOk : Status::kInvalidArgument;
+}
+
+Status SetBridgeProbe(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
+    return SetBridgeProbeImpl(env, clazz, name, signature, /*force=*/false);
+}
+
+Status ForceBridgeProbe(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
+    return SetBridgeProbeImpl(env, clazz, name, signature, /*force=*/true);
 }
 
 Status Hook(JNIEnv* env,
@@ -234,12 +285,35 @@ Status Hook(JNIEnv* env,
     return HookEngine::Hook(env, clazz, name, signature, replacement, backup_out);
 }
 
+Status Hook(JNIEnv* env,
+            const char* class_name,
+            const char* name,
+            const char* signature,
+            void* replacement,
+            void** backup_out) {
+    if (!env || !class_name) return Status::kInvalidArgument;
+    jclass clazz = FindClassByName(env, class_name);
+    if (!clazz) return Status::kMethodNotFound;
+    Status s = HookEngine::Hook(env, clazz, name, signature, replacement, backup_out);
+    env->DeleteLocalRef(clazz);
+    return s;
+}
+
 Status HookReflected(JNIEnv* env, jobject reflected_method, void* replacement, void** backup_out) {
     return HookEngine::HookReflected(env, reflected_method, replacement, backup_out);
 }
 
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
     return HookEngine::Unhook(env, clazz, name, signature);
+}
+
+Status Unhook(JNIEnv* env, const char* class_name, const char* name, const char* signature) {
+    if (!env || !class_name) return Status::kInvalidArgument;
+    jclass clazz = FindClassByName(env, class_name);
+    if (!clazz) return Status::kMethodNotFound;
+    Status s = HookEngine::Unhook(env, clazz, name, signature);
+    env->DeleteLocalRef(clazz);
+    return s;
 }
 
 const char* StatusToString(Status s) {
@@ -258,6 +332,12 @@ const char* StatusToString(Status s) {
             return "kAlreadyHooked";
         case Status::kNotHooked:
             return "kNotHooked";
+        case Status::kInvalidArgument:
+            return "kInvalidArgument";
+        case Status::kOutOfMemory:
+            return "kOutOfMemory";
+        case Status::kNoJniBridge:
+            return "kNoJniBridge";
         case Status::kInternalError:
             return "kInternalError";
     }

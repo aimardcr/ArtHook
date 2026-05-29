@@ -18,6 +18,10 @@ enum class Status {
     kTrampolineAllocFailed,
     kAlreadyHooked,
     kNotHooked,
+    kInvalidArgument,  // null/empty argument or other caller misuse
+    kOutOfMemory,      // an allocation failed
+    kNoJniBridge,      // non-native target but no JNI bridge captured;
+                       // recover via SetBridgeProbe()/ForceBridgeProbe()
     kInternalError,
 };
 
@@ -27,6 +31,11 @@ Status Initialize(JNIEnv* env);
 
 namespace detail {
 Status AcquireJniEnv(JNIEnv** env, JavaVM** vm, bool* attached);
+
+// Re-sync the backup ArtMethod's declaring-class ref from the live target
+// before invoking it, a moving GC can otherwise leave the backup's copy
+// stale. No-op on null. Called by Hooked::invoke().
+void RefreshBackupClass(void* backup, void* target);
 }
 
 // Run `body(env)` with a JNIEnv for the calling thread, attaching to the
@@ -40,12 +49,20 @@ Status AttachToJavaVM(Fn&& body) {
     Status s = detail::AcquireJniEnv(&env, &vm, &attached);
     if (s != Status::kOk) return s;
     struct Detacher {
+        JNIEnv* env;
         JavaVM* vm;
         bool attached;
         ~Detacher() {
-            if (attached && vm) vm->DetachCurrentThread();
+            if (attached && vm) {
+                // Detaching with a pending exception can abort under CheckJNI.
+                if (env && env->ExceptionCheck()) {
+                    env->ExceptionDescribe();
+                    env->ExceptionClear();
+                }
+                vm->DetachCurrentThread();
+            }
         }
-    } guard{vm, attached};
+    } guard{env, vm, attached};
     body(env);
     return Status::kOk;
 }
@@ -55,9 +72,16 @@ Status AttachToJavaVM(Fn&& body) {
 bool HasJniBridge();
 
 // Designate a native method whose quick entry is the generic JNI bridge
-// inside libart. No-op if Initialize() already captured one. Returns
-// kInternalError if the candidate's quick entry isn't in libart.
+// inside libart. No-op if Initialize() already captured one (the auto-
+// captured bridge is preferred). Returns kInvalidArgument if the
+// candidate's quick entry isn't a usable bridge.
 Status SetBridgeProbe(JNIEnv* env, jclass clazz, const char* name, const char* signature);
+
+// Like SetBridgeProbe(), but overrides an already-captured bridge instead of
+// no-opping, use it to recover from a wrong auto-captured bridge (e.g. on
+// stripped/non-arm64 builds). The candidate is still validated, so a bad
+// probe is rejected rather than installed.
+Status ForceBridgeProbe(JNIEnv* env, jclass clazz, const char* name, const char* signature);
 
 // Replace `name`/`signature` on `clazz` with `replacement` (JNI calling
 // convention). `backup_out` receives:
@@ -67,8 +91,23 @@ Status SetBridgeProbe(JNIEnv* env, jclass clazz, const char* name, const char* s
 //     or CallStatic*Method for static targets. Plain virtual Call*Method
 //     re-resolves to the patched target and infinitely recurses.
 // Backup stays callable after Unhook().
+//
+// Non-native backups can go stale under a moving GC, before invoking, call
+// detail::RefreshBackupClass(backup, target), or use the Hooked wrapper
+// (its invoke() does this for you).
 Status Hook(JNIEnv* env,
             jclass clazz,
+            const char* name,
+            const char* signature,
+            void* replacement,
+            void** backup_out);
+
+// Convenience overload: resolve `class_name` via the app classloader
+// (with FindClass fallback) and forward. Accepts either JNI form
+// ("com/foo/Bar") or dotted form ("com.foo.Bar"). Returns
+// kMethodNotFound if the class itself cannot be resolved.
+Status Hook(JNIEnv* env,
+            const char* class_name,
             const char* name,
             const char* signature,
             void* replacement,
@@ -79,6 +118,7 @@ Status HookReflected(JNIEnv* env, jobject reflected_method, void* replacement, v
 
 // Restore the original. Backup remains callable.
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* signature);
+Status Unhook(JNIEnv* env, const char* class_name, const char* name, const char* signature);
 
 bool IsInitialized();
 const char* StatusToString(Status s);
