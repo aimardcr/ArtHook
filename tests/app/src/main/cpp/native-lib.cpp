@@ -101,13 +101,13 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     }
 
     if (!RegisterTargets(env)) {
-        LOGE("Failed to register native targets — tests of native-bound methods will fail");
+        LOGE("Failed to register native targets, tests of native-bound methods will fail");
     }
 
     if (arthook::HasJniBridge()) {
         LOGI("JNI bridge captured by Initialize()");
     } else {
-        LOGW("no JNI bridge — non-native hooks will fail with kInternalError");
+        LOGW("no JNI bridge, non-native hooks will fail with kNoJniBridge");
     }
     return JNI_VERSION_1_6;
 }

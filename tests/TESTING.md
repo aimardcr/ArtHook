@@ -11,9 +11,9 @@ What each test category checks, and what SKIP reasons mean.
 | `instance_int_arg` | Instance method, one `int` arg. Verifies arg pass-through into the hook. |
 | `instance_string_concat` | Instance method, `String` arg and return. Verifies object-typed args and references stay valid in the hook. |
 | `final_class_method` | Method on a `final` class. Final classes can't be subclassed but ART still stores the method in their `methods_` array; arthook should hook them like any other. |
-| `long_double_int_args` | Mixed 64-bit argument passing — `long` (8B), `double` (8B in FP reg), `int` (4B). Catches arm32 64-bit register-pair bugs and arm64 mixed GP/FP regs. |
+| `long_double_int_args` | Mixed 64-bit argument passing, `long` (8B), `double` (8B in FP reg), `int` (4B). Catches arm32 64-bit register-pair bugs and arm64 mixed GP/FP regs. |
 | `double_return_many_doubles` | Four `double` args and a `double` return. Catches FP-return-register usage bugs. |
-| `eight_int_args_stack_passed` | Eight `int` args — on arm64, exceeds x0..x7 + thiz, forcing stack-passed args through ART's bridge. |
+| `eight_int_args_stack_passed` | Eight `int` args, on arm64, exceeds x0..x7 + thiz, forcing stack-passed args through ART's bridge. |
 | `returns_null` | Object-returning method that returns null. Hook also returns null. |
 | `throws_exception_propagates` | Method that throws `RuntimeException`. Hook throws its own; verifies exception machinery still works. |
 | `package_private_class` | Hooks a method on a non-public class via reflection. |
@@ -30,8 +30,8 @@ What each test category checks, and what SKIP reasons mean.
 | `final_method` | Final on the method itself (not the class). |
 | `abstract_method_graceful` | Abstract method has no real implementation. Either arthook refuses the install (any non-zero status) or the install is a no-op (abstract slot isn't directly invoked through any concrete subclass's vtable). **PASS = no crash, regardless of which path.** |
 | `native_registered_via_register_natives` | Native method explicitly bound by `RegisterNatives`. Hook replaces the JNI binding; backup is the original C function pointer. |
-| `interface_default_method` | Java 8 interface `default` method. **SKIPs on Android 13+**: ART dispatches past the per-class *copied* ArtMethod we patch and goes straight to the interface's original. Hooking the interface's ArtMethod itself would catch it — different code path, not currently exposed. |
-| `parent_child_polymorphism` | Hook the child's vtable slot, call on parent — parent should be unaffected. Verifies we hook the right ArtMethod, not the shared one. |
+| `interface_default_method` | Java 8 interface `default` method. **SKIPs on Android 13+**: ART dispatches past the per-class *copied* ArtMethod we patch and goes straight to the interface's original. Hooking the interface's ArtMethod itself would catch it, different code path, not currently exposed. |
+| `parent_child_polymorphism` | Hook the child's vtable slot, call on parent, parent should be unaffected. Verifies we hook the right ArtMethod, not the shared one. |
 
 ## Concurrency
 
@@ -50,7 +50,7 @@ What each test category checks, and what SKIP reasons mean.
 | `backup_returns_original_value` | Backup `jmethodID` returned by `Hook()` invokes the original behavior. |
 | `backup_call_from_hook_wrap` | Hook function calls backup inline (wrap pattern). |
 | `backup_call_from_different_thread` | Backup invoked from a thread other than the one that installed the hook. |
-| `backup_loop_1000x` | 1 000 sequential backup invocations — no drift, no leak. |
+| `backup_loop_1000x` | 1 000 sequential backup invocations, no drift, no leak. |
 
 ## Args
 
@@ -62,15 +62,15 @@ object/null/large-string/array shapes.
 | `arg_boolean`, `arg_byte`, `arg_char`, `arg_short`, `arg_int`, `arg_long`, `arg_float`, `arg_double` | The hook sees the same value the caller passed. `arg_byte` checks signed sign-extension; `arg_long` checks the full 64 bits round-trip. |
 | `arg_string_readable_in_hook` | `jstring` arg is a valid local ref inside the hook (`GetStringUTFChars` succeeds). |
 | `arg_null_object` | `null` object arg reaches the hook as `nullptr`. |
-| `arg_long_string_1mb` | 1 MB string — `GetStringLength` returns 1 048 576. |
-| `arg_object_array_mixed_null` | `Object[]` with mixed null entries — array length and per-element nullness preserved. |
+| `arg_long_string_1mb` | 1 MB string, `GetStringLength` returns 1 048 576. |
+| `arg_object_array_mixed_null` | `Object[]` with mixed null entries, array length and per-element nullness preserved. |
 
 ## Lifecycle
 
 | Test | What it verifies |
 |---|---|
 | `hook_uncalled_method` | Target hasn't been invoked yet this session; hook fires on the first call. |
-| `hook_after_jit_warmup` | Caller is warmed (50 000 iterations) to encourage JIT compilation, then hook is installed. **SKIPs if** the JIT inlined the original — that's a known arthook limitation (we don't deoptimize). |
+| `hook_after_jit_warmup` | Caller is warmed (50 000 iterations) to encourage JIT compilation, then hook is installed. **SKIPs if** the JIT inlined the original, that's a known arthook limitation (we don't deoptimize). |
 | `warmup_caller_after_hook` | Hook is installed first, then 50 000 warm-up iterations run. Verifies the hook stays effective through tier transitions. May SKIP for the same reason. |
 
 ## Failure
@@ -79,8 +79,8 @@ object/null/large-string/array shapes.
 |---|---|
 | `no_such_class` | `installHook` with a key that points at a bogus class name. Returns non-zero, no crash. |
 | `no_such_method` | Method name doesn't exist on a real class. |
-| `wrong_signature` | Class+name exist but signature doesn't match — same error code. |
-| `null_replacement` | Passing `nullptr` as the replacement → `kInternalError`. |
+| `wrong_signature` | Class+name exist but signature doesn't match, same error code. |
+| `null_replacement` | Passing `nullptr` as the replacement → `kInvalidArgument`. |
 | `initialize_twice_is_ok` | Second `arthook::Initialize(env)` returns `kOk` (idempotent). |
 | `hook_before_initialize` | Always SKIPs: we can't un-initialize arthook within the same process. The contract is exercised at startup (first `Hook()` call would return `kNotInitialized` if `Initialize` hadn't run). |
 | `hook_abstract_method` | Same as the Modifier-category variant. Mustn't crash. |
@@ -90,7 +90,7 @@ object/null/large-string/array shapes.
 | Test | What it verifies |
 |---|---|
 | `fd_count_stable_after_install_unhook_loop` | 25 install/unhook cycles don't leak file descriptors (delta ≤ 4 for class-loader transients). |
-| `trampoline_pages_free_after_unhook` | Counter tracking `BuildTrampoline`/`FreeTrampoline` returns to baseline after unhook. |
+| `trampoline_pages_free_after_unhook` | Install/unhook handle-balance counter returns to baseline. The RX trampoline page itself is intentionally leaked on unhook (a thread may still be executing it on the lock-free path), so this tracks bookkeeping balance, not munmap. |
 | `rss_growth_bounded_after_loop` | 10 outer × 1 000 inner invocations. RSS growth < 8 MB (allowing JIT cache, class loading). A real leak shows tens of MB. |
 
 ## Diagnostics
