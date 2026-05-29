@@ -64,10 +64,8 @@ bool PointsIntoLibart(uintptr_t p) {
     return p >= g_libart_base && p < g_libart_end;
 }
 
-// A usable JNI bridge is the generic-JNI trampoline, NOT the interpreter
-// bridge or the resolution trampoline. Installing either as a hooked method's
-// quick entry sends a codeless `native` method to the interpreter (crash) or
-// silently runs the original. Resolve those once and reject matches.
+// A usable bridge is the generic-JNI trampoline, not the interpreter bridge
+// or resolution trampoline (installing those crashes or silently no-ops).
 bool BridgeUsable(uintptr_t cand) {
     if (!PointsIntoLibart(cand)) return false;
     static uintptr_t interp =
@@ -182,16 +180,11 @@ size_t DiscoverAccessFlagsOffset(JNIEnv* env, jclass object_class, size_t am_siz
     return static_cast<size_t>(-1);
 }
 
-// Entry-point offsets are structural: the trailing PtrSizedFields is
-// (data_, entry_point_from_quick_compiled_code_) since ART 6.0, so both
-// offsets fall out of am_size.
-//
-// jni_bridge_quick_entry (= art_quick_generic_jni_trampoline) is needed for
-// non-native hooks. Tried in order: (1) .dynsym symbol; (2) an Object
-// native's quick entry, if not AOT'd into boot.oat; (3) a fresh probe dex
-// whose native lands on the resolution trampoline (arm64 only, bridge at
-// +0x140). If all fail the bridge stays null and non-native hooks return
-// kNoJniBridge.
+// Entry offsets fall out of am_size (trailing PtrSizedFields = data_,
+// quick_code). The JNI bridge (art_quick_generic_jni_trampoline, for
+// non-native hooks) is tried in order: .dynsym symbol, an Object native's
+// quick entry, then a probe-dex native (arm64, bridge at +0x140). If all
+// fail it stays null and non-native hooks return kNoJniBridge.
 struct EntryPointOffsets {
     size_t jni;
     size_t quick;
@@ -244,11 +237,6 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
                  p.name);
             out.valid = true;
             return out;
-        }
-        if (PointsIntoLibart(q)) {
-            LOGI("entry probe: Object.%s quick=%p rejected (interpreter/resolution stub)",
-                 p.name,
-                 reinterpret_cast<void*>(q));
         }
     }
 
