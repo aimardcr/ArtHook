@@ -57,22 +57,27 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
+          # Paths are relative to the action's cwd (the repo root); avoid
+          # $GITHUB_WORKSPACE, which may be unset inside this shell.
           script: |
-            LOG="$GITHUB_WORKSPACE/logcat-api${{ matrix.api-level }}.txt"
-            adb logcat -c || true
-            adb logcat > "$LOG" &
+            LOG="logcat-api${{ matrix.api-level }}.txt"
+            adb root || true
+            adb logcat -c -b all || true
+            adb logcat -b all > "$LOG" &
             chmod +x tests/gradlew
             ( cd tests && ./gradlew --no-daemon connectedDebugAndroidTest ); RC=$?
-            sleep 2
+            sleep 3
+            adb pull /data/tombstones "tombstones-api${{ matrix.api-level }}" || true
             echo "===== arthook init + failures + crash (logcat tail) ====="
-            grep -aE 'arthook|AndroidRuntime|libc|^F DEBUG|SIGSEGV|SIGABRT|tombstone|Fatal signal' "$LOG" | tail -n 400 || true
+            grep -aE 'arthook|AndroidRuntime|libc|DEBUG|SIGSEGV|SIGABRT|Fatal signal|tombstone' "$LOG" | tail -n 400 || true
             exit $RC
-      - name: Upload logcat and test report
+      - name: Upload logcat, tombstones and test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: arthook-test-api${{ matrix.api-level }}
           path: |
             logcat-api${{ matrix.api-level }}.txt
+            tombstones-api${{ matrix.api-level }}/
             tests/app/build/reports/androidTests/connected/
           if-no-files-found: ignore
