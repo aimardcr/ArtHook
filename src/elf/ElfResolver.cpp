@@ -60,6 +60,10 @@ inline bool InRange(uintptr_t p, uintptr_t lo, uintptr_t hi) {
     return p >= lo && p < hi;
 }
 
+inline bool NameMatches(const char* s, const char* q, bool prefix) {
+    return prefix ? std::strncmp(s, q, std::strlen(q)) == 0 : std::strcmp(s, q) == 0;
+}
+
 // Overflow-safe: is [off, off+len) within [0, size)?
 inline bool FitsIn(uint64_t off, uint64_t len, uint64_t size) {
     return off <= size && size - off >= len;
@@ -187,7 +191,7 @@ bool EnsureInit() {
     return g_info.base != 0;  // located, file fallback works even if dynsym is null
 }
 
-void* LookupInDynsym(const char* name) {
+void* LookupInDynsym(const char* name, bool prefix) {
     if (!g_info.dynsym || !g_info.dynstr) return nullptr;
     size_t strmax = g_info.dynstr_size;
     if (strmax == 0 && g_info.map_hi > reinterpret_cast<uintptr_t>(g_info.dynstr))
@@ -197,13 +201,13 @@ void* LookupInDynsym(const char* name) {
         if (s.st_name == 0 || s.st_value == 0) continue;
         const char* str = nullptr;
         if (!SafeStr(g_info.dynstr, s.st_name, strmax, &str)) continue;
-        if (std::strcmp(str, name) == 0)
+        if (NameMatches(str, name, prefix))
             return reinterpret_cast<void*>(g_info.base + s.st_value);
     }
     return nullptr;
 }
 
-void* LookupInFileSymtab(const char* name) {
+void* LookupInFileSymtab(const char* name, bool prefix) {
     static const char* const kCandidates[] = {
 #if defined(__LP64__)
         "/apex/com.android.art/lib64/libart.so",
@@ -276,7 +280,7 @@ void* LookupInFileSymtab(const char* name) {
                 if (syms[i].st_name == 0 || syms[i].st_value == 0) continue;
                 const char* str = nullptr;
                 if (!SafeStr(strs, syms[i].st_name, strtab->sh_size, &str)) continue;
-                if (std::strcmp(str, name) == 0) {
+                if (NameMatches(str, name, prefix)) {
                     result = reinterpret_cast<void*>(g_info.base + syms[i].st_value);
                     break;
                 }
@@ -293,9 +297,26 @@ void* LookupInFileSymtab(const char* name) {
 void* ResolveLibartSymbol(const char* name) {
     if (!EnsureInit()) return nullptr;
     if (g_info.dynsym) {
-        if (void* p = LookupInDynsym(name)) return p;
+        if (void* p = LookupInDynsym(name, false)) return p;
     }
-    return LookupInFileSymtab(name);
+    return LookupInFileSymtab(name, false);
+}
+
+void* ResolveLibartSymbolPrefix(const char* prefix) {
+    if (!EnsureInit() || !prefix || !*prefix) return nullptr;
+    if (g_info.dynsym) {
+        if (void* p = LookupInDynsym(prefix, true)) return p;
+    }
+    return LookupInFileSymtab(prefix, true);
+}
+
+void* ResolveLibartSymbolAny(const char* const* names, size_t count) {
+    for (size_t i = 0; i < count; ++i) {
+        if (names[i]) {
+            if (void* p = ResolveLibartSymbol(names[i])) return p;
+        }
+    }
+    return nullptr;
 }
 
 }  // namespace arthook
