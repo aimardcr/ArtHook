@@ -130,9 +130,16 @@ Status HookReflected(JNIEnv* env, jobject reflected_method, void* replacement, v
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* signature);
 Status Unhook(JNIEnv* env, const char* class_name, const char* name, const char* signature);
 
-// True if the named/reflected method is currently hooked.
+// True if the named/reflected method is currently hooked (a record exists).
 bool IsHooked(JNIEnv* env, jclass clazz, const char* name, const char* signature);
 bool IsHookedReflected(JNIEnv* env, jobject reflected_method);
+
+// True if the hook is not just recorded but still LIVE — its entry points
+// haven't been overwritten. Returns false if a hook was silently clobbered:
+// e.g. RegisterNatives re-registering a hooked native method, or ART resetting
+// a static method's entry on class (re)initialization. Re-Hook() to recover.
+bool IsHookLive(JNIEnv* env, jclass clazz, const char* name, const char* signature);
+bool IsHookLiveReflected(JNIEnv* env, jobject reflected_method);
 
 // Snapshot of the discovered ArtMethod layout and engine state, for
 // diagnostics/telemetry (e.g. to attach when reporting a device where

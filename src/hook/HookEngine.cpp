@@ -346,6 +346,36 @@ Diagnostics GetDiagnostics() {
     return d;
 }
 
+// Caller holds g_mutex. True if `target` is hooked AND its live entry points
+// still match what we installed (detects a silent clobber).
+static bool HookLiveLocked(ArtMethodPtr target) {
+    auto it = g_hooks.find(target);
+    if (it == g_hooks.end()) return false;
+    const HookEntry& e = it->second;
+    if (GetEntryPointFromJni(target) != e.trampoline.entry) return false;
+    if ((e.original_flags & kAccNative) == 0 &&
+        GetEntryPointFromQuickCompiledCode(target) != Layout().jni_bridge_quick_entry) {
+        return false;
+    }
+    return true;
+}
+
+bool IsHookLive(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
+    if (!g_initialized || !env || !clazz || !name || !signature) return false;
+    ArtMethodPtr target = ArtMethodFromJniBinding(env, clazz, name, signature);
+    if (!target) return false;
+    std::lock_guard<std::mutex> lk(g_mutex);
+    return HookLiveLocked(target);
+}
+
+bool IsHookLiveReflected(JNIEnv* env, jobject reflected) {
+    if (!g_initialized || !env || !reflected) return false;
+    ArtMethodPtr target = ArtMethodFromReflected(env, reflected);
+    if (!target) return false;
+    std::lock_guard<std::mutex> lk(g_mutex);
+    return HookLiveLocked(target);
+}
+
 const char* StatusToString(Status s) {
     switch (s) {
         case Status::kOk:
