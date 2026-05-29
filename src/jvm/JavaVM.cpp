@@ -5,6 +5,8 @@
 #include <dlfcn.h>
 #include <jni.h>
 
+#include <atomic>
+
 #include "elf/ElfResolver.h"
 #include "util/Log.h"
 
@@ -15,13 +17,12 @@ namespace {
 using JniGetVmsFn = jint (*)(JavaVM**, jsize, jsize*);
 
 JniGetVmsFn ResolveJniGetCreatedVMs() {
-    // libart always exports JNI_GetCreatedJavaVMs (it implements the
-    // Invocation API). libnativehelper forwards to it on Android Q+; try
-    // it as a fallback in case the host process has libart in a stricter
-    // linker namespace.
+    // libart exports JNI_GetCreatedJavaVMs; fall back to libnativehelper
+    // (forwards on Q+) in case libart is in a stricter linker namespace.
     if (auto p = reinterpret_cast<JniGetVmsFn>(ResolveLibartSymbol("JNI_GetCreatedJavaVMs"))) {
         return p;
     }
+    // Not dlclose'd: the resolved fn pointer must stay valid process-wide.
     if (void* h = dlopen("libnativehelper.so", RTLD_NOW)) {
         if (auto p = reinterpret_cast<JniGetVmsFn>(dlsym(h, "JNI_GetCreatedJavaVMs"))) {
             return p;
@@ -36,12 +37,18 @@ JniGetVmsFn ResolveJniGetCreatedVMs() {
 namespace detail {
 
 Status AcquireJniEnv(JNIEnv** env_out, JavaVM** vm_out, bool* attached_out) {
-    if (!env_out || !vm_out || !attached_out) return Status::kInternalError;
+    if (!env_out || !vm_out || !attached_out) return Status::kInvalidArgument;
     *env_out = nullptr;
     *vm_out = nullptr;
     *attached_out = false;
 
-    static JniGetVmsFn get_vms = ResolveJniGetCreatedVMs();
+    // Retry until it resolves, don't cache null forever.
+    static std::atomic<JniGetVmsFn> cached{nullptr};
+    JniGetVmsFn get_vms = cached.load();
+    if (!get_vms) {
+        get_vms = ResolveJniGetCreatedVMs();
+        if (get_vms) cached.store(get_vms);
+    }
     if (!get_vms) return Status::kInternalError;
 
     JavaVM* vms[1] = {nullptr};
