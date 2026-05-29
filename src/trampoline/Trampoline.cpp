@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <mutex>
 
 #include "util/Log.h"
 #include "util/Memory.h"
@@ -80,53 +81,76 @@ size_t PageSize() {
     return ps > 0 ? static_cast<size_t>(ps) : 4096;
 }
 
+// 16-byte aligned slot, so the arm64 8-byte literal stays aligned and slots
+// don't share a cache line awkwardly.
+size_t SlotSize() {
+    return (TemplateSize() + 15u) & ~size_t(15);
+}
+
+// Slots are packed into RWX pages: a page stays writable while it still has
+// free slots (we must write future slots into it while earlier ones execute,
+// so W and X coexist). Allocation allowed on Android via execmem.
+std::mutex g_pool_mu;
+uint8_t* g_page = nullptr;
+size_t g_page_size = 0;
+size_t g_page_off = 0;
+
 }  // namespace
 
 TrampolinePage BuildTrampoline(void* target) {
     const size_t page = PageSize();
     const size_t tsize = TemplateSize();
-    if (tsize == 0 || tsize > page) {
+    const size_t slot = SlotSize();
+    if (tsize == 0 || slot == 0 || slot > page) {
         LOGE("trampoline: bad template size %zu", tsize);
         return {};
     }
 
-    void* mem = ::mmap(nullptr, page, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (mem == MAP_FAILED) {
-        LOGE("trampoline: mmap failed (%d)", errno);
-        return {};
-    }
+    std::lock_guard<std::mutex> lk(g_pool_mu);
 
-    std::memcpy(mem, TemplateBegin(), tsize);
+    if (!g_page || g_page_off + slot > g_page_size) {
+        // The current page is full and needs no more writes, so try to drop W
+        // (RWX -> RX). Removing W from a page whose other slots are executing
+        // is safe (X is kept). Best-effort: if the platform forbids the
+        // transition we leave it RWX and carry on silently.
+        if (g_page) ::mprotect(g_page, g_page_size, PROT_READ | PROT_EXEC);
 
-    if (kPatchIs64) {
-        uint64_t v = reinterpret_cast<uint64_t>(target);
-        std::memcpy(static_cast<uint8_t*>(mem) + kPatchOffset, &v, sizeof(v));
-    } else {
-        uint32_t v = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(target));
-        std::memcpy(static_cast<uint8_t*>(mem) + kPatchOffset, &v, sizeof(v));
-    }
-
-    // RX flip; if SELinux/W^X policy denies it, fall back to RWX.
-    if (::mprotect(mem, page, PROT_READ | PROT_EXEC) != 0) {
-        if (::mprotect(mem, page, PROT_READ | PROT_WRITE | PROT_EXEC) != 0) {
-            LOGE("trampoline: mprotect to RX failed (%d)", errno);
-            ::munmap(mem, page);
+        void* mem = ::mmap(nullptr, page, PROT_READ | PROT_WRITE | PROT_EXEC,
+                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (mem == MAP_FAILED) {
+            LOGE("trampoline: RWX mmap failed (%d)", errno);
             return {};
         }
-        LOGW("trampoline: fell back to RWX page");
+        g_page = static_cast<uint8_t*>(mem);
+        g_page_size = page;
+        g_page_off = 0;
     }
 
-    __builtin___clear_cache(static_cast<char*>(mem), static_cast<char*>(mem) + tsize);
+    uint8_t* s = g_page + g_page_off;
+    g_page_off += slot;
+
+    // Written under g_pool_mu so a concurrent fill can't downgrade this page
+    // to RX before the write lands.
+    std::memcpy(s, TemplateBegin(), tsize);
+    if (kPatchIs64) {
+        uint64_t v = reinterpret_cast<uint64_t>(target);
+        std::memcpy(s + kPatchOffset, &v, sizeof(v));
+    } else {
+        uint32_t v = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(target));
+        std::memcpy(s + kPatchOffset, &v, sizeof(v));
+    }
+    __builtin___clear_cache(reinterpret_cast<char*>(s), reinterpret_cast<char*>(s) + tsize);
 
     TrampolinePage out;
-    out.base = mem;
-    out.size = page;
-    out.entry = mem;
+    out.entry = s;
     return out;
 }
 
-void FreeTrampoline(TrampolinePage page) {
-    if (page.base) ::munmap(page.base, page.size);
+void FreeTrampoline(TrampolinePage) {
+    // No-op. Slots live in shared pooled pages, so we can't munmap one. And
+    // invocation is lock-free, so a thread may still be executing a slot after
+    // Unhook; reusing it would be a use-after-free. We therefore never reclaim
+    // a slot. Install-failure rollback leaks one slot (rare).
 }
 
 }  // namespace arthook
