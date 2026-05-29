@@ -17,6 +17,7 @@ set(ARTHOOK_COMMON_SOURCES
     src/art/Layout.cpp
     src/elf/ElfResolver.cpp
     src/hook/Deoptimize.cpp
+    src/hook/HookBatch.cpp
     src/hook/HookEngine.cpp
     src/hook/Hooked.cpp
     src/hook/SelfTest.cpp

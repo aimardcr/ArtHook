@@ -137,6 +137,15 @@ Status HookReflected(JNIEnv* env, jobject reflected_method, void* replacement, v
 Status Deoptimize(JNIEnv* env, jclass clazz, const char* name, const char* signature);
 Status DeoptimizeReflected(JNIEnv* env, jobject reflected_method);
 
+// Hook every declared method named `name` on the class (all overloads) with
+// the same `replacement` — handy when a target's signature varies across
+// Android versions (e.g. SSL-pinning checks). `replacement` must be
+// ABI-compatible with every matched overload. Returns the number hooked; no
+// backups are returned (hook by signature if you need to call the original).
+// Methods only, not constructors.
+int HookAllOverloads(JNIEnv* env, jclass clazz, const char* name, void* replacement);
+int HookAllOverloads(JNIEnv* env, const char* class_name, const char* name, void* replacement);
+
 // Restore the original. Backup remains callable.
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* signature);
 Status Unhook(JNIEnv* env, const char* class_name, const char* name, const char* signature);
