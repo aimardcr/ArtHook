@@ -2,6 +2,7 @@ package com.ak4ne.arthooktest;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
+import com.ak4ne.arthooktest.testkit.TestResult;
 import com.ak4ne.arthooktest.testkit.TestRunner;
 import com.ak4ne.arthooktest.tests.ArgTests;
 import com.ak4ne.arthooktest.tests.BackupTests;
@@ -43,9 +44,22 @@ public class HookSuiteTest {
         DiagnosticTests.register(r);
 
         TestRunner.Summary s = r.run(r.entries(), null);
-        assertEquals(
-                "arthook suite had failures (pass=" + s.pass + " fail=" + s.fail
-                        + " skip=" + s.skip + "); see logcat tag '" + TestRunner.TAG + "'",
-                0, s.fail);
+
+        // Embed every failure (and skip) reason in the assertion message so it
+        // lands in the JUnit HTML report, which uploads reliably even when
+        // logcat capture doesn't.
+        StringBuilder sb = new StringBuilder(
+                "arthook suite (pass=" + s.pass + " fail=" + s.fail + " skip=" + s.skip + ")");
+        for (TestResult t : s.results) {
+            if (t.status == TestResult.Status.FAIL)
+                sb.append("\n  FAIL ").append(t.category).append('/').append(t.name)
+                  .append(": ").append(t.reason);
+        }
+        for (TestResult t : s.results) {
+            if (t.status == TestResult.Status.SKIP)
+                sb.append("\n  SKIP ").append(t.category).append('/').append(t.name)
+                  .append(": ").append(t.reason);
+        }
+        assertEquals(sb.toString(), 0, s.fail);
     }
 }

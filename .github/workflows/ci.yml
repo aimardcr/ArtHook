@@ -57,19 +57,21 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          # Paths are relative to the action's cwd (the repo root); avoid
-          # $GITHUB_WORKSPACE, which may be unset inside this shell.
+          # Paths are relative to the action's cwd (the repo root). Logcat is
+          # dumped once after the run (reliable, no background process).
           script: |
             LOG="logcat-api${{ matrix.api-level }}.txt"
-            adb root || true
-            adb logcat -c -b all || true
-            adb logcat -b all > "$LOG" &
             chmod +x tests/gradlew
             ( cd tests && ./gradlew --no-daemon connectedDebugAndroidTest ); RC=$?
-            sleep 3
-            adb pull /data/tombstones "tombstones-api${{ matrix.api-level }}" || true
-            echo "===== arthook init + failures + crash (logcat tail) ====="
-            grep -aE 'arthook|AndroidRuntime|libc|DEBUG|SIGSEGV|SIGABRT|Fatal signal|tombstone' "$LOG" | tail -n 400 || true
+            adb logcat -d -b all > "$LOG" 2>&1 || true
+            adb root >/dev/null 2>&1 && adb wait-for-device || true
+            adb pull /data/tombstones "tombstones-api${{ matrix.api-level }}" >/dev/null 2>&1 || true
+            echo "::group::arthook logcat (filtered)"
+            grep -aiE 'arthook|fatal|signal|backtrace|sigsegv|sigabrt|libart|^F ' "$LOG" | tail -n 400 || true
+            echo "::endgroup::"
+            echo "::group::tombstones"
+            cat "tombstones-api${{ matrix.api-level }}"/* 2>/dev/null | tail -n 200 || true
+            echo "::endgroup::"
             exit $RC
       - name: Upload logcat, tombstones and test report
         if: always()
