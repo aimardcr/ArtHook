@@ -57,29 +57,24 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          # Paths are relative to the action's cwd (the repo root). Logcat is
-          # dumped once after the run (reliable, no background process).
+          # Write logcat + tombstones INTO the report dir, which uploads
+          # reliably. Logcat is dumped once after the run (no background proc).
           script: |
-            LOG="logcat-api${{ matrix.api-level }}.txt"
+            RPT="tests/app/build/reports/androidTests/connected"
             chmod +x tests/gradlew
             ( cd tests && ./gradlew --no-daemon connectedDebugAndroidTest ); RC=$?
-            adb logcat -d -b all > "$LOG" 2>&1 || true
+            mkdir -p "$RPT"
+            adb logcat -d -b main,system,crash > "$RPT/logcat-api${{ matrix.api-level }}.txt" 2>&1 || true
             adb root >/dev/null 2>&1 && adb wait-for-device || true
-            adb pull /data/tombstones "tombstones-api${{ matrix.api-level }}" >/dev/null 2>&1 || true
-            echo "::group::arthook logcat (filtered)"
-            grep -aiE 'arthook|fatal|signal|backtrace|sigsegv|sigabrt|libart|^F ' "$LOG" | tail -n 400 || true
-            echo "::endgroup::"
-            echo "::group::tombstones"
-            cat "tombstones-api${{ matrix.api-level }}"/* 2>/dev/null | tail -n 200 || true
+            adb pull /data/tombstones "$RPT/tombstones-api${{ matrix.api-level }}" >/dev/null 2>&1 || true
+            echo "::group::arthook init + failures + crash (logcat)"
+            grep -aiE 'arthook|fatal|signal|backtrace|sigsegv|sigabrt|libart|^F ' "$RPT/logcat-api${{ matrix.api-level }}.txt" | tail -n 400 || true
             echo "::endgroup::"
             exit $RC
-      - name: Upload logcat, tombstones and test report
+      - name: Upload test report (incl. logcat + tombstones)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: arthook-test-api${{ matrix.api-level }}
-          path: |
-            logcat-api${{ matrix.api-level }}.txt
-            tombstones-api${{ matrix.api-level }}/
-            tests/app/build/reports/androidTests/connected/
+          path: tests/app/build/reports/androidTests/connected/
           if-no-files-found: ignore

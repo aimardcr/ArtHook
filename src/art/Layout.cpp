@@ -64,6 +64,21 @@ bool PointsIntoLibart(uintptr_t p) {
     return p >= g_libart_base && p < g_libart_end;
 }
 
+// A usable JNI bridge is the generic-JNI trampoline, NOT the interpreter
+// bridge or the resolution trampoline. Installing either as a hooked method's
+// quick entry sends a codeless `native` method to the interpreter (crash) or
+// silently runs the original. Resolve those once and reject matches.
+bool BridgeUsable(uintptr_t cand) {
+    if (!PointsIntoLibart(cand)) return false;
+    static uintptr_t interp =
+        reinterpret_cast<uintptr_t>(ResolveLibartSymbol("art_quick_to_interpreter_bridge"));
+    static uintptr_t resol =
+        reinterpret_cast<uintptr_t>(ResolveLibartSymbol("art_quick_resolution_trampoline"));
+    if (interp && cand == interp) return false;
+    if (resol && cand == resol) return false;
+    return true;
+}
+
 // Methods of one class are stored contiguously, so the smallest pairwise diff
 // between Object jmethodIDs equals sizeof(ArtMethod).
 size_t DiscoverArtMethodSize(JNIEnv* env, jclass object_class) {
@@ -194,7 +209,7 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
     out.jni = am_size - 2 * sizeof(void*);
 
     if (void* sym = ResolveLibartSymbol("art_quick_generic_jni_trampoline");
-        sym && PointsIntoLibart(reinterpret_cast<uintptr_t>(sym))) {
+        sym && BridgeUsable(reinterpret_cast<uintptr_t>(sym))) {
         out.jni_bridge = sym;
         LOGI("entry offsets: jni=%zu quick=%zu bridge=%p (via .dynsym)",
              out.jni,
@@ -220,7 +235,7 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
         if (env->ExceptionCheck()) env->ExceptionClear();
         if (!id) continue;
         uintptr_t q = ReadUintPtr(reinterpret_cast<const void*>(id), out.quick);
-        if (PointsIntoLibart(q)) {
+        if (BridgeUsable(q)) {
             out.jni_bridge = reinterpret_cast<void*>(q);
             LOGI("entry offsets: jni=%zu quick=%zu bridge=%p (from Object.%s)",
                  out.jni,
@@ -229,6 +244,11 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
                  p.name);
             out.valid = true;
             return out;
+        }
+        if (PointsIntoLibart(q)) {
+            LOGI("entry probe: Object.%s quick=%p rejected (interpreter/resolution stub)",
+                 p.name,
+                 reinterpret_cast<void*>(q));
         }
     }
 
@@ -244,7 +264,7 @@ EntryPointOffsets DiscoverEntryPointOffsets(JNIEnv* env, jclass object_class, si
             // Apply if it's the resolution trampoline (or the symbol is stripped).
             if (is_resol || !res_sym) {
                 uintptr_t adj = probe_quick + 0x140;
-                if (PointsIntoLibart(adj)) {
+                if (BridgeUsable(adj)) {
                     out.jni_bridge = reinterpret_cast<void*>(adj);
                     LOGI("entry offsets: jni=%zu quick=%zu bridge=%p (probe dex +0x140)",
                          out.jni,
