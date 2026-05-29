@@ -20,6 +20,13 @@ public:
     // ArtMethod* (resolved via reflection through Executable.artMethod).
     // Returns nullptr on any failure.
     static void* SampleProbeArtMethod(JNIEnv* env);
+
+    // Load a fresh probe class (its own InMemoryDexClassLoader) for the
+    // self-test. Returns a local ref or nullptr. The class declares one
+    // `public static native` method named MethodName(), signature "()V";
+    // RegisterNatives it before use.
+    static jclass LoadClass(JNIEnv* env);
+    static const char* MethodName();
 };
 
 }  // namespace arthook

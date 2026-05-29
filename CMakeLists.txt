@@ -18,6 +18,7 @@ set(ARTHOOK_COMMON_SOURCES
     src/elf/ElfResolver.cpp
     src/hook/HookEngine.cpp
     src/hook/Hooked.cpp
+    src/hook/SelfTest.cpp
     src/jvm/ClassLookup.cpp
     src/jvm/JavaVM.cpp
     src/probe/Probe.cpp

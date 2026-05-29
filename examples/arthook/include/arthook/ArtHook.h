@@ -29,6 +29,14 @@ enum class Status {
 // Idempotent.
 Status Initialize(JNIEnv* env);
 
+// Preflight: hook an internal sentinel, invoke it, confirm the replacement
+// and backup both fire, then remove it. Returns kOk only if hooking is fully
+// functional on this device. Run after Initialize() to fail fast when layout
+// discovery produced wrong offsets, instead of crashing on a later real hook.
+// Exercises the native-method path + layout/trampoline; non-native readiness
+// is reported separately by HasJniBridge().
+Status SelfTest(JNIEnv* env);
+
 namespace detail {
 Status AcquireJniEnv(JNIEnv** env, JavaVM** vm, bool* attached);
 

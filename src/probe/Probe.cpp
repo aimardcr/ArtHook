@@ -514,4 +514,12 @@ void* Probe::SampleProbeArtMethod(JNIEnv* env) {
     return am;
 }
 
+jclass Probe::LoadClass(JNIEnv* env) {
+    return env ? LoadProbeClass(env) : nullptr;
+}
+
+const char* Probe::MethodName() {
+    return probe_names().method;
+}
+
 }  // namespace arthook
