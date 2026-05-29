@@ -17,9 +17,12 @@
 #include <mutex>
 #include <unordered_map>
 
+#include <cstdio>
+
 #include "art/AccessFlags.h"
 #include "art/ArtMethod.h"
 #include "art/Layout.h"
+#include "elf/ElfResolver.h"
 #include "hook/SelfTest.h"
 #include "jvm/ClassLookup.h"
 #include "trampoline/Trampoline.h"
@@ -302,6 +305,24 @@ bool IsTargetHooked(void* target) {
     if (!target) return false;
     std::lock_guard<std::mutex> lk(g_mutex);
     return g_hooks.find(target) != g_hooks.end();
+}
+
+// Internal diagnostic (intentionally NOT in the public header): discovered
+// layout + captured bridge + resolved libart trampoline symbols. The test app
+// surfaces this in its report because CI logcat capture is unreliable.
+const char* DebugInfo() {
+    static char buf[512];
+    const ArtMethodLayout& l = Layout();
+    std::snprintf(buf, sizeof(buf),
+                  "init=%d size=%zu af=%zu jni=%zu quick=%zu bridge=%p | "
+                  "sym gjni=%p interp=%p resol=%p",
+                  static_cast<int>(g_initialized.load()), l.art_method_size, l.offset_access_flags,
+                  l.offset_entry_point_jni, l.offset_entry_point_quick_code,
+                  l.jni_bridge_quick_entry,
+                  ResolveLibartSymbol("art_quick_generic_jni_trampoline"),
+                  ResolveLibartSymbol("art_quick_to_interpreter_bridge"),
+                  ResolveLibartSymbol("art_quick_resolution_trampoline"));
+    return buf;
 }
 
 const char* StatusToString(Status s) {
