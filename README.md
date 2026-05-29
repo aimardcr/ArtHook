@@ -2,7 +2,7 @@
 
 A self-contained C++17 static library for hooking Java methods at the ART
 (Android Runtime) level. Manipulates `ArtMethod` structures directly via
-runtime-derived offsets — **no Frida, no Xposed, no LSPlant, no YAHFA, no
+runtime-derived offsets, **no Frida, no Xposed, no LSPlant, no YAHFA, no
 Pine, no SandHook**. Standard system libraries only (`libc`, `libdl`,
 `liblog`, and ART symbols resolved at runtime).
 
@@ -26,7 +26,7 @@ without per-version hardcoded offset tables.
   done that (zygisk, ptrace, or whatever else); arthook just provides the
   hooking primitive once you're inside.
 - Restore methods that have been **inlined** into hot AOT-compiled callers.
-  Those callers are not deoptimized — they keep running the inlined copy.
+  Those callers are not deoptimized, they keep running the inlined copy.
 - Provide a scripting layer, argument-logger, or libffi-based generic
   dispatch. Your replacement function must match the original's ABI.
 
@@ -57,7 +57,7 @@ target_link_libraries(my_payload PRIVATE arthook::arthook)
 ```
 
 ```cpp
-// my_payload.cpp — hooks Object.toString() (a non-native Java method).
+// my_payload.cpp, hooks Object.toString() (a non-native Java method).
 #include <arthook/Hooked.h>
 #include <android/log.h>
 
@@ -85,7 +85,7 @@ JNI_OnLoad(JavaVM* vm, void*) {
 
 `Hooked::invoke<Ret>(env, thiz, args...)` works the same for native and
 non-native targets, instance and static. For static methods pass `nullptr`
-as `thiz` — it's ignored. Call `g_toString.release(env)` before the handle
+as `thiz`, it's ignored. Call `g_toString.release(env)` before the handle
 goes out of scope (e.g. from `JNI_OnUnload`); the destructor cannot do it
 because no `JNIEnv` is available there.
 
@@ -97,7 +97,7 @@ available if you'd rather manage the backup `jmethodID` and declaring-class
 
 If your `.so` is loaded by an injector (zygisk, ptrace, another `.so`
 calling `dlopen`) instead of `System.loadLibrary`, there's no `JNI_OnLoad`
-callback to hand you a `JavaVM*`. Use `arthook::AttachToJavaVM` — it
+callback to hand you a `JavaVM*`. Use `arthook::AttachToJavaVM`, it
 locates the running `JavaVM` via `JNI_GetCreatedJavaVMs`, attaches the
 calling thread if needed, and detaches automatically on scope exit:
 
@@ -120,7 +120,7 @@ extern "C" void arthook_payload_start() {
 }
 ```
 
-The hooks installed inside the lambda persist after detach — the
+The hooks installed inside the lambda persist after detach, the
 installation is recorded in ART's method tables, not in the env.
 
 ## Public API
@@ -132,7 +132,8 @@ namespace arthook {
 
 enum class Status { kOk, kNotInitialized, kLayoutDiscoveryFailed,
                     kMethodNotFound, kTrampolineAllocFailed,
-                    kAlreadyHooked, kNotHooked, kInternalError };
+                    kAlreadyHooked, kNotHooked, kInvalidArgument,
+                    kOutOfMemory, kNoJniBridge, kInternalError };
 
 Status Initialize(JNIEnv* env);
 Status Hook(JNIEnv* env, jclass clazz, const char* name, const char* sig,
@@ -141,6 +142,9 @@ Status HookReflected(JNIEnv* env, jobject reflected_method,
                      void* replacement, void** backup_out);
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* sig);
 
+bool        HasJniBridge();
+Status      SetBridgeProbe(JNIEnv*, jclass, const char* name, const char* sig);
+Status      ForceBridgeProbe(JNIEnv*, jclass, const char* name, const char* sig);
 bool        IsInitialized();
 const char* StatusToString(Status s);
 
@@ -158,10 +162,10 @@ We never hardcode `ArtMethod` offsets per Android version. Instead, at
 
 | What                                        | How                                                                                                                                                                                  |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `sizeof(ArtMethod)`                         | Collect 6 `jmethodID`s from `java.lang.Object`, sort, take pairwise diffs — methods of the same class are stored contiguously, so the smallest sane diff is exactly `sizeof(ArtMethod)`. |
+| `sizeof(ArtMethod)`                         | Collect 6 `jmethodID`s from `java.lang.Object`, sort, take pairwise diffs, methods of the same class are stored contiguously, so the smallest sane diff is exactly `sizeof(ArtMethod)`. |
 | `access_flags_` offset                      | The low 16 bits hold standard JVM dex flags. For 4 `public` instance methods of `Object`, those bits can only contain `{kAccPublic, kAccFinal, kAccNative}`. Scan for the unique 32-bit word where every probe satisfies that invariant. |
 | `entry_point_from_jni_` & `_quick_compiled_code_` offsets | Structural: the trailing `PtrSizedFields` is `(data_, entry_point_from_quick_compiled_code_)` on every Android with ART since 6.0, so both offsets fall out of `sizeof(ArtMethod)`. |
-| `jni_bridge_quick_entry` (= `art_quick_generic_jni_trampoline`) | Required only for hooking *non-native* methods. Three tiers, first match wins: (1) resolve directly from libart's `.dynsym` (rarely exported); (2) sample the quick entry of an `Object` native that isn't AOT'd into boot.oat; (3) build a probe dex at runtime, load it via `InMemoryDexClassLoader`, read the (unresolved) native's quick entry — `art_quick_resolution_trampoline` on Android 11+ — and apply the known `+0x140` offset to reach the generic bridge. |
+| `jni_bridge_quick_entry` (= `art_quick_generic_jni_trampoline`) | Required only for hooking *non-native* methods. Three tiers, first match wins: (1) resolve directly from libart's `.dynsym` (rarely exported); (2) sample the quick entry of an `Object` native that isn't AOT'd into boot.oat; (3) build a probe dex at runtime, load it via `InMemoryDexClassLoader`, read the (unresolved) native's quick entry, `art_quick_resolution_trampoline` on Android 11+, and apply the known `+0x140` offset to reach the generic bridge. |
 
 If any of these checks fails or returns an ambiguous result, `Initialize()`
 returns `kLayoutDiscoveryFailed` and the library refuses to install hooks.
@@ -198,7 +202,11 @@ A hook installation does the following:
    the captured generic-JNI bridge as `entry_point_from_quick_compiled_code_`
    so quick callers go through it before reaching JNI.
 
-`Unhook()` reverses steps 4–5 and frees the trampoline.
+`Unhook()` restores the saved access flags and entry points and releases the
+declaring-class GlobalRef. The RX trampoline page and the backup ArtMethod
+slot are intentionally leaked, invocation is lock-free, so a thread may still
+be executing the trampoline. One page + one slot per unhook, so avoid tight
+hook/unhook loops at runtime.
 
 ## Threading
 
@@ -207,7 +215,7 @@ mutex. They are safe to call from any thread.
 
 Hooked method **invocation** is **lock-free**. The trampoline is a few
 bytes of `ldr+br` (ARM64), `ldr+bx` (ARM), `jmp [rip+0]` (x86_64), or
-`push+ret` (x86) — no synchronization, no extra branches. ART thinks it
+`push+ret` (x86), no synchronization, no extra branches. ART thinks it
 called the original method and dispatches normally.
 
 ## Caveats
@@ -215,13 +223,14 @@ called the original method and dispatches normally.
 - On Android 11+ default ART builds `jmethodID` is `(index << 1) | 1` (the
   `kSwapablePointer` JNI-IDs mode), not a direct `ArtMethod*`. We
   transparently round-trip through `env->ToReflectedMethod` and read the
-  raw pointer out of the `Executable.artMethod` long field — see
+  raw pointer out of the `Executable.artMethod` long field, see
   `src/art/ArtMethod.cpp`.
-- AOT-inlined call sites bypass the hook. JIT-tiered callers eventually
-  redispatch through the entry points once `kAccCompileDontBother` causes
-  the inlined copy to fall out of cache, but there is no immediate
-  deoptimization. If you need that, you'll need to add a deopt path; this
-  library deliberately stays out of that complexity.
+- AOT-inlined and already-compiled call sites bypass the hook: there is no
+  deoptimization. `kAccCompileDontBother` only prevents *future* compilation
+ , it does not evict code ART already compiled or inlined, and boot-image
+  AOT inlines never fall out. Hook a method before it goes hot. Redirecting
+  already-compiled callers would need a deopt path; this library deliberately
+  stays out of that complexity.
 - Interface `default` methods are not currently hookable on Android 13+:
   ART dispatches past the per-class *copied* `ArtMethod` we patch, going
   directly to the interface's original. Would require hooking the
@@ -229,7 +238,7 @@ called the original method and dispatches normally.
 
 ## Test app
 
-A comprehensive test suite lives under [`tests/`](tests) — 56 tests across
+A comprehensive test suite lives under [`tests/`](tests), 56 tests across
 10 categories (method kinds, modifiers, concurrency, backup, args,
 lifecycle, failure, resources, diagnostics, SSL). Open it as an Android
 Studio project, run on a device/emulator with API 26+, tap **Run all**.
@@ -240,7 +249,7 @@ See [`tests/TESTING.md`](tests/TESTING.md) for what each category covers.
 [`examples/ssl_bypass/`](examples/ssl_bypass) is a complete payload that
 neutralizes the certificate-pinning checks of OkHttp, Trustkit, Conscrypt
 `TrustManagerImpl`, WebView, Apache HttpClient, and a handful of legacy
-libraries — a port of Maurizio Siddu's `frida_multiple_unpinning` script.
+libraries, a port of Maurizio Siddu's `frida_multiple_unpinning` script.
 It demonstrates the recommended consumption pattern (deferred init via a
 worker thread to avoid the early-startup GC race) and uses the shared
 prebuilt `arthook` static lib from [`examples/arthook/`](examples/arthook).
