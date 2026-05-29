@@ -8,6 +8,8 @@
 
 #include <jni.h>
 
+#include <cstddef>
+
 namespace arthook {
 
 enum class Status {
@@ -127,6 +129,24 @@ Status HookReflected(JNIEnv* env, jobject reflected_method, void* replacement, v
 // Restore the original. Backup remains callable.
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* signature);
 Status Unhook(JNIEnv* env, const char* class_name, const char* name, const char* signature);
+
+// True if the named/reflected method is currently hooked.
+bool IsHooked(JNIEnv* env, jclass clazz, const char* name, const char* signature);
+bool IsHookedReflected(JNIEnv* env, jobject reflected_method);
+
+// Snapshot of the discovered ArtMethod layout and engine state, for
+// diagnostics/telemetry (e.g. to attach when reporting a device where
+// discovery failed). All offsets are SIZE_MAX until Initialize() succeeds.
+struct Diagnostics {
+    bool initialized;
+    bool has_jni_bridge;
+    size_t art_method_size;
+    size_t offset_access_flags;
+    size_t offset_entry_point_jni;
+    size_t offset_entry_point_quick_code;
+    size_t active_hooks;
+};
+Diagnostics GetDiagnostics();
 
 bool IsInitialized();
 const char* StatusToString(Status s);

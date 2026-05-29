@@ -316,6 +316,36 @@ Status Unhook(JNIEnv* env, const char* class_name, const char* name, const char*
     return s;
 }
 
+bool IsHooked(JNIEnv* env, jclass clazz, const char* name, const char* signature) {
+    if (!g_initialized || !env || !clazz || !name || !signature) return false;
+    ArtMethodPtr target = ArtMethodFromJniBinding(env, clazz, name, signature);
+    if (!target) return false;
+    std::lock_guard<std::mutex> lk(g_mutex);
+    return g_hooks.find(target) != g_hooks.end();
+}
+
+bool IsHookedReflected(JNIEnv* env, jobject reflected) {
+    if (!g_initialized || !env || !reflected) return false;
+    ArtMethodPtr target = ArtMethodFromReflected(env, reflected);
+    if (!target) return false;
+    std::lock_guard<std::mutex> lk(g_mutex);
+    return g_hooks.find(target) != g_hooks.end();
+}
+
+Diagnostics GetDiagnostics() {
+    Diagnostics d{};
+    d.initialized = g_initialized.load();
+    std::lock_guard<std::mutex> lk(g_mutex);
+    const ArtMethodLayout& l = Layout();
+    d.has_jni_bridge = l.jni_bridge_quick_entry != nullptr;
+    d.art_method_size = l.art_method_size;
+    d.offset_access_flags = l.offset_access_flags;
+    d.offset_entry_point_jni = l.offset_entry_point_jni;
+    d.offset_entry_point_quick_code = l.offset_entry_point_quick_code;
+    d.active_hooks = g_hooks.size();
+    return d;
+}
+
 const char* StatusToString(Status s) {
     switch (s) {
         case Status::kOk:
