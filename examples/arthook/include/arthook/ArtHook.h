@@ -24,6 +24,7 @@ enum class Status {
     kOutOfMemory,      // an allocation failed
     kNoJniBridge,      // non-native target but no JNI bridge captured;
                        // recover via SetBridgeProbe()/ForceBridgeProbe()
+    kDeoptUnavailable,  // Deoptimize() can't run: needed libart symbol stripped
     kInternalError,
 };
 
@@ -125,6 +126,16 @@ Status Hook(JNIEnv* env,
 
 // As Hook(), but identifies the target via a java.lang.reflect.Method.
 Status HookReflected(JNIEnv* env, jobject reflected_method, void* replacement, void** backup_out);
+
+// Force a NON-NATIVE method to run in the interpreter so already-compiled or
+// inlined callers re-dispatch through it. Opt-in mitigation for the AOT/JIT
+// inline gap: to make a hooked method fire from a caller that inlined it,
+// Deoptimize the CALLER (not the hooked method itself, which is refused with
+// kAlreadyHooked). Best-effort and NOT sticky: returns kDeoptUnavailable when
+// the needed libart symbol is stripped, and ART may re-optimize later (poll
+// IsHookLive on the hook). Does not invalidate AOT boot-image inlines.
+Status Deoptimize(JNIEnv* env, jclass clazz, const char* name, const char* signature);
+Status DeoptimizeReflected(JNIEnv* env, jobject reflected_method);
 
 // Restore the original. Backup remains callable.
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* signature);

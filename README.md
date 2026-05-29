@@ -133,18 +133,27 @@ namespace arthook {
 enum class Status { kOk, kNotInitialized, kLayoutDiscoveryFailed,
                     kMethodNotFound, kTrampolineAllocFailed,
                     kAlreadyHooked, kNotHooked, kInvalidArgument,
-                    kOutOfMemory, kNoJniBridge, kInternalError };
+                    kOutOfMemory, kNoJniBridge, kDeoptUnavailable,
+                    kInternalError };
 
 Status Initialize(JNIEnv* env);
+Status SelfTest(JNIEnv* env);              // verify hooking works on this device
 Status Hook(JNIEnv* env, jclass clazz, const char* name, const char* sig,
             void* replacement, void** backup_out);
 Status HookReflected(JNIEnv* env, jobject reflected_method,
                      void* replacement, void** backup_out);
 Status Unhook(JNIEnv* env, jclass clazz, const char* name, const char* sig);
 
+// Force a non-native method to the interpreter (deopt a CALLER to defeat
+// inlining of a hooked method). Opt-in, best-effort, not sticky.
+Status Deoptimize(JNIEnv* env, jclass clazz, const char* name, const char* sig);
+
 bool        HasJniBridge();
 Status      SetBridgeProbe(JNIEnv*, jclass, const char* name, const char* sig);
 Status      ForceBridgeProbe(JNIEnv*, jclass, const char* name, const char* sig);
+bool        IsHooked(JNIEnv*, jclass, const char* name, const char* sig);
+bool        IsHookLive(JNIEnv*, jclass, const char* name, const char* sig);
+Diagnostics GetDiagnostics();              // discovered layout + state snapshot
 bool        IsInitialized();
 const char* StatusToString(Status s);
 

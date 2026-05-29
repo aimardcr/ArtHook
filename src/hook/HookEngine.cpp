@@ -398,6 +398,8 @@ const char* StatusToString(Status s) {
             return "kOutOfMemory";
         case Status::kNoJniBridge:
             return "kNoJniBridge";
+        case Status::kDeoptUnavailable:
+            return "kDeoptUnavailable";
         case Status::kInternalError:
             return "kInternalError";
     }
