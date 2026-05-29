@@ -58,5 +58,21 @@ jobs:
           target: google_apis
           disable-animations: true
           script: |
+            LOG="$GITHUB_WORKSPACE/logcat-api${{ matrix.api-level }}.txt"
+            adb logcat -c || true
+            adb logcat > "$LOG" &
             chmod +x tests/gradlew
-            cd tests && ./gradlew --no-daemon connectedDebugAndroidTest
+            ( cd tests && ./gradlew --no-daemon connectedDebugAndroidTest ); RC=$?
+            sleep 2
+            echo "===== arthook init + failures + crash (logcat tail) ====="
+            grep -aE 'arthook|AndroidRuntime|libc|^F DEBUG|SIGSEGV|SIGABRT|tombstone|Fatal signal' "$LOG" | tail -n 400 || true
+            exit $RC
+      - name: Upload logcat and test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arthook-test-api${{ matrix.api-level }}
+          path: |
+            logcat-api${{ matrix.api-level }}.txt
+            tests/app/build/reports/androidTests/connected/
+          if-no-files-found: ignore
