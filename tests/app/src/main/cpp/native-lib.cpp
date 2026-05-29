@@ -11,11 +11,6 @@
 
 #include <arthook/ArtHook.h>
 
-// Internal diagnostic, defined in libarthook (not in the public header).
-namespace arthook {
-const char* DebugInfo();
-}
-
 #define TAG "arthook-test"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
@@ -54,9 +49,8 @@ extern "C" {
 
 JNIEXPORT jstring JNICALL Java_com_ak4ne_arthooktest_testkit_NativeBridge_layoutInfo(JNIEnv* env,
                                                                                      jclass) {
-    // arthook::DebugInfo is an internal (not-public-header) diagnostic linked
-    // from libarthook; surface it so the report shows the captured bridge.
-    return env->NewStringUTF(arthook::DebugInfo());
+    return env->NewStringUTF(arthook::IsInitialized() ? "arthook initialized"
+                                                       : "arthook NOT initialized");
 }
 
 JNIEXPORT jlong JNICALL Java_com_ak4ne_arthooktest_testkit_NativeBridge_processRssKb(JNIEnv*,
