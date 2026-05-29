@@ -2,7 +2,6 @@ package com.ak4ne.arthooktest;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 
-import com.ak4ne.arthooktest.testkit.NativeBridge;
 import com.ak4ne.arthooktest.testkit.TestResult;
 import com.ak4ne.arthooktest.testkit.TestRunner;
 import com.ak4ne.arthooktest.tests.ArgTests;
@@ -21,13 +20,7 @@ import org.junit.runner.RunWith;
 
 import static org.junit.Assert.assertEquals;
 
-/**
- * Headless driver for the full arthook test suite, so CI can run every
- * category on an emulator matrix (this is what catches per-Android-version
- * layout-discovery regressions, which a compile-only build can't). Mirrors
- * the registration in MainActivity; known limitations report as SKIP, so a
- * healthy run has zero FAILs.
- */
+/** Headless driver for the full suite; known limitations report SKIP, so a healthy run has zero FAILs. */
 @RunWith(AndroidJUnit4.class)
 public class HookSuiteTest {
     @Test
@@ -46,18 +39,9 @@ public class HookSuiteTest {
 
         TestRunner.Summary s = r.run(r.entries(), null);
 
-        // Embed every failure (and skip) reason in the assertion message so it
-        // lands in the JUnit HTML report, which uploads reliably even when
-        // logcat capture doesn't.
-        String diag;
-        try {
-            diag = NativeBridge.layoutInfo();
-        } catch (Throwable t) {
-            diag = "layoutInfo failed: " + t;
-        }
+        // Embed each FAIL/SKIP reason in the assertion message so it lands in the JUnit HTML report.
         StringBuilder sb = new StringBuilder(
-                "DIAG[" + diag + "] arthook suite (pass=" + s.pass + " fail=" + s.fail + " skip="
-                        + s.skip + ")");
+                "arthook suite (pass=" + s.pass + " fail=" + s.fail + " skip=" + s.skip + ")");
         for (TestResult t : s.results) {
             if (t.status == TestResult.Status.FAIL)
                 sb.append("\n  FAIL ").append(t.category).append('/').append(t.name)
