@@ -72,6 +72,9 @@ public final class TestRunner {
         try {
             for (int i = 0; i < subset.size(); i++) {
                 Entry e = subset.get(i);
+                // Logged before the test runs so a native crash (which kills
+                // the process) leaves the culprit as the last RUN line.
+                Log.i(TAG, "RUN " + e.category + "/" + e.name);
                 TestResult r = runOne(exec, e);
                 s.add(r);
                 if (listener != null) listener.onProgress(r, i, subset.size());
