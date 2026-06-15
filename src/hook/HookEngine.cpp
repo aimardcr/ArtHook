@@ -78,11 +78,12 @@ Status InstallHookLocked(
         return Status::kTrampolineAllocFailed;
     }
 
-    // Reshape to `private native` + CompileDontBother (see AccessFlags.h).
+    // Reshape to native + CompileDontBother, preserving visibility (see
+    // AccessFlags.h): keeping the original public/protected bit lets a
+    // cross-class caller still pass ART's access check.
     const bool was_native = (e.original_flags & kAccNative) != 0;
     uint32_t flags = e.original_flags;
     flags &= ~kAccHookClearMask;
-    flags |= kAccPrivate;
     flags |= kAccNative;
     flags |= kAccCompileDontBother;
     SetAccessFlags(target, flags);

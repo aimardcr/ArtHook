@@ -43,11 +43,13 @@ constexpr uint32_t kAccIntrinsified = 0x00100000;
 constexpr uint32_t kAccObsoleteMethod = 0x00040000;
 constexpr uint32_t kAccSingleImpl = 0x08000000;
 
-// Cleared on hook install: stale modifiers, non-concrete attributes,
-// synchronized (avoid bridge monitor setup), and the fast/critical/
-// pre-compiled/intrinsified dispatch shortcuts that bypass the generic JNI
-// bridge or misroute object args on Android 13+.
-constexpr uint32_t kAccHookClearMask = kAccPublic | kAccProtected | kAccAbstract | kAccInterface |
+// Cleared on hook install: non-concrete attributes, synchronized (avoid bridge
+// monitor setup), and the fast/critical/pre-compiled/intrinsified dispatch
+// shortcuts that bypass the generic JNI bridge or misroute object args on
+// Android 13+. Visibility (public/protected/private) is deliberately preserved:
+// a hooked method may be invoked from another class, and downgrading it (e.g. to
+// private) makes that call fail ART's access check with IllegalAccessError.
+constexpr uint32_t kAccHookClearMask = kAccAbstract | kAccInterface |
                                        kAccDefault | kAccSynchronized | kAccDeclaredSynchronized |
                                        kAccFastNative | kAccCriticalNative | kAccPreCompiled |
                                        kAccIntrinsified | kAccObsoleteMethod | kAccSingleImpl;
